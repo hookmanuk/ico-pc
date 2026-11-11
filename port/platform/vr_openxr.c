@@ -345,7 +345,7 @@ bool ico_vr_early_init(void)
     _putenv_s("ICO_RD_VU_PREPASS", "0");
     /* the renderer's frustum and occlusion skips are the camera's picture's:
        the eyes see around it */
-    _putenv_s("ICO_RD_CULL", "off");
+    _putenv_s("ICO_RD_CULL", "frustum"); /* through the eyes (rd_vis.c); no occlusion test */
     return true;
 }
 

@@ -578,3 +578,26 @@ bool rd_vr_write_png(const char *path, const uint8_t *rgba, uint32_t w, uint32_t
 {
     return rd_write_png(path, rgba, w, h, w * 4u, 0);
 }
+
+bool rd__vr_eye_screens(const RdCamera *cam, double D[2][16])
+{
+    const RdVrFrame *f = &s_vr.cur;
+    if (!s_vr.on || !cam || !f->valid || f->flat) {
+        return false;
+    }
+    double S[16], Si[16];
+    for (int i = 0; i < 16; i++) {
+        S[i] = cam->proj[i];
+    }
+    if (!inv4(S, Si)) {
+        return false;
+    }
+    for (int v = 0; v < 2; v++) {
+        double E[16], Se[16];
+        eyeFromCamera(f->eye[v], (double)s_vr.unitsPerMetre, E);
+        eyeScreen(f->tan[v], S, Se);
+        mul4(Se, E, D[v]);
+        mul4(D[v], Si, D[v]);
+    }
+    return true;
+}

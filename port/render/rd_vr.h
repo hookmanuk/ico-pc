@@ -94,5 +94,8 @@ uint32_t rd__vr_screen_kind(const void *cmd); /* a const RdCmd * */
 uint32_t rd__vr_screen_kind_in(const void *cmd, const void *frame, int list);
 /* the picture draws its 2D on the HUD (VR on, the eyes' picture, not flat) */
 bool rd__vr_hud_on(void);
+/* both eyes' D_v (vrScreen, double) for the picture's camera cam; false
+ * outside the eyes' pictures (the renderer's own cull: rd_vis.c) */
+bool rd__vr_eye_screens(const RdCamera *cam, double D[2][16]);
 
 #endif

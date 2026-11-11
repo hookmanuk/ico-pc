@@ -115,6 +115,7 @@
 
 #include "rd_mesh.h"
 #include "rd_vis.h"
+#include "rd_vr.h"
 #include "shader_consts.h"
 
 /* the lists tested: the scene's (list 11 is the 2D layer and the fades,
@@ -360,6 +361,39 @@ static double absMax(float a, float b)
 {
     const double x = fabs((double)a), y = fabs((double)b);
     return x > y ? x : y;
+}
+
+/* VR fork (rd_vr.h): the eyes' D_v of the frame being walked, and whether
+ * they hold (set per frame in rd__vis_frame) */
+static double s_vrD[2][16];
+static bool s_vrEyes;
+
+int rd__vis_test(const float (*m)[4], const RdVisBox *b, bool scissor, const RdVisRect *r);
+
+/* the test through each eye (h_eye = D_v h, so each column of m through
+ * D_v): skipped only when both eyes skip it */
+static int visTestEyes(const float (*m)[4], const RdVisBox *b, bool scissor, const RdVisRect *r,
+                       bool frameCamera)
+{
+    if (!s_vrEyes || !frameCamera) {
+        return rd__vis_test(m, b, scissor, r);
+    }
+    int keep = 0, v = RD_VIS_KEEP;
+    for (int e = 0; e < 2 && !keep; e++) {
+        float me[4][4];
+        for (int k = 0; k < 4; k++) {
+            for (int row = 0; row < 4; row++) {
+                double s = 0.0;
+                for (int j = 0; j < 4; j++) {
+                    s += s_vrD[e][j * 4 + row] * (double)m[k][j];
+                }
+                me[k][row] = (float)s;
+            }
+        }
+        v = rd__vis_test((const float (*)[4])me, b, scissor, r);
+        keep = v == RD_VIS_KEEP;
+    }
+    return keep ? RD_VIS_KEEP : v;
 }
 
 int rd__vis_test(const float (*m)[4], const RdVisBox *b, bool scissor, const RdVisRect *r)
@@ -976,6 +1010,9 @@ static int cmdVerdict(VisWalk *w, int l, const RdCmd *c, const RdStateBlock *st,
         return RD_VIS_KEEP;
     }
     const bool scissor = p.clip == RD_VU_CLIP_SCISSOR;
+    /* VR fork: a draw under the frame's camera (no reflection camera's
+       picture) is drawn through the eyes' transform (rd_vr.h) */
+    const bool eyeCam = c->b[3] == 0 && c->b[6] == 0;
     float mem[36][4];
     memcpy(mem, pay + sizeof(RdVuPayload), sizeof(mem));
     const RdVisRect r = rd__vis_rect(st->gsW, st->gsH, tc->w, tc->h);
@@ -996,7 +1033,7 @@ static int cmdVerdict(VisWalk *w, int l, const RdCmd *c, const RdStateBlock *st,
             why = skin ? RD_VIS_WHY_NO_SKIN : RD_VIS_WHY_NO_BOX;
             if (e && !skin && e->boxOk && e->box.n) {
                 bounded = true;
-                v = rd__vis_test((const float (*)[4]) & mem[16], &e->box, scissor, &r);
+                v = visTestEyes((const float (*)[4]) & mem[16], &e->box, scissor, &r, eyeCam);
                 why = none               ? RD_VIS_WHY_KEEP_NONE
                       : scissor          ? RD_VIS_WHY_KEEP_SCISSOR
                       : p.batchCount > 1 ? RD_VIS_WHY_KEEP_MESH_N
@@ -1016,7 +1053,7 @@ static int cmdVerdict(VisWalk *w, int l, const RdCmd *c, const RdStateBlock *st,
                     rangeBox(e, m, p.firstBatch, last, &rb)) {
                     haveRb = true;
                     if (!none) {
-                        v = rd__vis_test((const float (*)[4]) & mem[16], &rb, scissor, &r);
+                        v = visTestEyes((const float (*)[4]) & mem[16], &rb, scissor, &r, eyeCam);
                         if (v != RD_VIS_KEEP) {
                             why = RD_VIS_WHY_SKIP_RANGE;
                         }
@@ -1038,6 +1075,9 @@ static int cmdVerdict(VisWalk *w, int l, const RdCmd *c, const RdStateBlock *st,
                     bounded = true;
                     const float (*bones)[4] = (const float (*)[4])(const void *)(pay + after);
                     v = rd__vis_test_skin((const float (*)[4])mem, bones, p.boneQw, s, &r);
+                    if (s_vrEyes) {
+                        v = RD_VIS_KEEP; /* VR fork: the bones' test is the camera's */
+                    }
                     why = v == RD_VIS_KEEP ? RD_VIS_WHY_KEEP_SKIN : RD_VIS_WHY_SKIP_WHOLE;
                 }
             }
@@ -1053,7 +1093,7 @@ static int cmdVerdict(VisWalk *w, int l, const RdCmd *c, const RdStateBlock *st,
                                  &b) &&
                 b.n) {
                 bounded = true;
-                v = rd__vis_test((const float (*)[4]) & mem[16], &b, scissor, &r);
+                v = visTestEyes((const float (*)[4]) & mem[16], &b, scissor, &r, eyeCam);
                 if (none) {
                     v = RD_VIS_KEEP;
                 }
@@ -1667,6 +1707,8 @@ const RdFrame *rd__vis_frame(const RdFrame *f, int keep)
     }
     memset(s_vis.why, 0, sizeof(s_vis.why));
     memset(s_vis.hz, 0, sizeof(s_vis.hz));
+    /* VR fork: the eyes' transforms of this picture's camera (rd_vr.h) */
+    s_vrEyes = rd__vr_eye_screens(f->hasCamera ? &f->camera : NULL, s_vrD);
     s_vis.msaa = s_vis.msaaForced >= 0 ? s_vis.msaaForced != 0 : rd_aa_samples(rd__aa_mode()) > 1u;
     const double t0 = rd__now_ms();
     VisWalk w;
