@@ -8,6 +8,7 @@
 #include "window_present.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "audio_host.h"
 #include "diag_host.h"
@@ -764,6 +765,21 @@ static void vr_presents(Uint64 period)
         }
         const double r = at > s_pres.tickAt ? (double)(at - s_pres.tickAt) / (double)tick : 0.0;
         const float a = (float)(r > 0.999 ? 0.999 : r);
+        {
+            /* development: ICO_VR_ALPHALOG=<n>, the first n presents' clock,
+               tick and alpha (the pictures' motion steps) */
+            static int s_left = -1;
+            if (s_left < 0) {
+                const char *e = getenv("ICO_VR_ALPHALOG");
+                s_left = e ? atoi(e) : 0;
+            }
+            if (s_left > 0) {
+                s_left--;
+                fprintf(stderr, "vr alpha: at %.3f tickAt %.3f tick %.3f r %.4f frame %u\n",
+                        (double)at / 1e6, (double)s_pres.tickAt / 1e6, (double)tick / 1e6, r,
+                        (unsigned)s_pres.frame);
+            }
+        }
         const bool fresh = s_pres.presentedFrame != s_pres.frame;
         rd_vr_post(&f);
         const int ok = present_once(a, refresh, period);

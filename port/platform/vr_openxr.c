@@ -24,6 +24,7 @@
 
 #include "../config/config.h"
 #include "../game/video_options.h"
+#include "../rhi/rhi_native.h"
 #include "../rhi/rhi_vr.h"
 
 extern int g_icoShaderVr; /* port/shaders/embed_shaders.py: the stereo shader variants */
@@ -99,6 +100,7 @@ static struct {
     /* the token: the newest headset frame's views (under lock) */
     RdVrFrame token;
     uint64_t tokenAtNs;
+    double leadNs; /* the display time's smoothed lead over xrWaitFrame's return */
     bool tokenTaken;
     uint64_t serial;
     /* each frame's located views as the runtime gave them (the layer's) */
@@ -190,6 +192,20 @@ bool ico_vr_enabled(void)
 bool ico_vr_running(void)
 {
     return g.running && g.thread != NULL;
+}
+
+/* the runtime's GPU for the renderer's instance (rhi_vr.h RhiVrSetup):
+   its requirements asked first, as the session needs */
+static void *runtimeGpu(void *instance)
+{
+    XrGraphicsRequirementsVulkanKHR req = {XR_TYPE_GRAPHICS_REQUIREMENTS_VULKAN_KHR};
+    g.GetVulkanGraphicsRequirementsKHR(g.instance, g.system, &req);
+    VkPhysicalDevice pd = VK_NULL_HANDLE;
+    if (!xrOk(g.GetVulkanGraphicsDeviceKHR(g.instance, g.system, (VkInstance)instance, &pd),
+              "xrGetVulkanGraphicsDeviceKHR")) {
+        return NULL;
+    }
+    return (void *)pd;
 }
 
 /* ------------------------------------------------------------ early init */
@@ -316,7 +332,7 @@ bool ico_vr_early_init(void)
            g.eyeW, g.eyeH, g.views[0].recommendedImageRectWidth,
            g.views[0].recommendedImageRectHeight, g.views[0].maxImageRectWidth,
            g.views[0].maxImageRectHeight, g.instExts, g.devExts);
-    RhiVrSetup setup = {true, g.instExts, g.devExts};
+    RhiVrSetup setup = {true, g.instExts, g.devExts, runtimeGpu};
     rhi_vr_setup(&setup);
     rd_vr_configure(true, g.eyeW, g.eyeH, 100.0f);
     g_icoShaderVr = 1;
@@ -335,7 +351,7 @@ bool ico_vr_early_init(void)
 
 /* ------------------------------------------------------- the time clocks */
 /* an XrTime as SDL_GetTicksNS's clock */
-__attribute__((unused)) static uint64_t xrToSdl(XrTime t)
+static uint64_t xrToSdl(XrTime t)
 {
     if (!g.ConvertTimeToQpc) {
         return SDL_GetTicksNS();
@@ -706,12 +722,24 @@ static int frameLoop(void *arg)
         XrView raw[2];
         const bool views = fs.shouldRender && locate(fs.predictedDisplayTime, &f, raw);
         uint64_t id = 0;
+        /* the alpha's clock: the frame's display time on SDL's clock (one
+           display period apart, frame after frame) less the smoothed lead of
+           the display time over this moment, so the alpha steps evenly and
+           stays where the closed frames are (one tick behind, as the flat
+           game's presents) */
+        uint64_t at = SDL_GetTicksNS();
+        if (views && g.ConvertTimeToQpc) {
+            const uint64_t now = at, shown = xrToSdl(fs.predictedDisplayTime);
+            const double lead = shown > now ? (double)(shown - now) : 0.0;
+            g.leadNs = g.leadNs > 0.0 ? g.leadNs + (lead - g.leadNs) * 0.02 : lead;
+            at = shown - (uint64_t)g.leadNs;
+        }
         if (views) {
             SDL_LockMutex(g.lock);
             id = ++g.serial;
             f.id = id;
             g.token = f;
-            g.tokenAtNs = SDL_GetTicksNS();
+            g.tokenAtNs = at;
             g.tokenTaken = false;
             g.raw[id % 8].id = id;
             g.raw[id % 8].v[0] = raw[0];
@@ -849,7 +877,30 @@ bool ico_vr_start(void)
         XrGraphicsRequirementsVulkanKHR req = {XR_TYPE_GRAPHICS_REQUIREMENTS_VULKAN_KHR};
         g.GetVulkanGraphicsRequirementsKHR(g.instance, g.system, &req);
         VkPhysicalDevice want = VK_NULL_HANDLE;
-        g.GetVulkanGraphicsDeviceKHR(g.instance, g.system, (VkInstance)d.instance, &want);
+        const XrResult wr =
+            g.GetVulkanGraphicsDeviceKHR(g.instance, g.system, (VkInstance)d.instance, &want);
+        VR_LOG("the runtime's Vulkan: API %u.%u to %u.%u, its GPU %s (result %d)",
+               (unsigned)XR_VERSION_MAJOR(req.minApiVersionSupported),
+               (unsigned)XR_VERSION_MINOR(req.minApiVersionSupported),
+               (unsigned)XR_VERSION_MAJOR(req.maxApiVersionSupported),
+               (unsigned)XR_VERSION_MINOR(req.maxApiVersionSupported),
+               want == (VkPhysicalDevice)d.physicalDevice ? "the renderer's" : "another", (int)wr);
+        if (want && want != (VkPhysicalDevice)d.physicalDevice) {
+            RhiNativeDevice nd;
+            if (rhi_native_device(&nd) && nd.getInstanceProcAddr) {
+                PFN_vkGetInstanceProcAddr gip;
+                memcpy(&gip, &nd.getInstanceProcAddr, sizeof(gip));
+                PFN_vkGetPhysicalDeviceProperties props =
+                    (PFN_vkGetPhysicalDeviceProperties)gip((VkInstance)d.instance,
+                                                           "vkGetPhysicalDeviceProperties");
+                if (props) {
+                    VkPhysicalDeviceProperties a, b;
+                    props(want, &a);
+                    props((VkPhysicalDevice)d.physicalDevice, &b);
+                    VR_LOG("the runtime's GPU: %s; the renderer's: %s", a.deviceName, b.deviceName);
+                }
+            }
+        }
         if (want != (VkPhysicalDevice)d.physicalDevice) {
             VR_LOG("the runtime asks for another GPU than the renderer's: the session may fail");
         }

@@ -1408,6 +1408,20 @@ static bool vkr_pick_device(void)
                     s_adapterWanted);
         }
     }
+    {
+        /* VR fork (vk_vr.c): the OpenXR runtime's GPU, which its session
+         * takes alone (xrGetVulkanGraphicsDeviceKHR) */
+        const VkPhysicalDevice want = vkr_vr_physical_device(g_vkr.instance);
+        for (uint32_t i = 0; want && i < n; i++) {
+            if (pds[i] == want) {
+                if ((int)i != pick) {
+                    VKR_LOG("VR: device %u is the headset runtime's GPU (picked over %d)", i, pick);
+                }
+                pick = (int)i;
+                snprintf(source, sizeof(source), "the headset runtime's GPU");
+            }
+        }
+    }
     if (autoPick >= 0 && autoPick < RHI_MAX_ADAPTERS) {
         s_adapters[autoPick].automatic = true;
     }

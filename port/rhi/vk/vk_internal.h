@@ -926,6 +926,7 @@ extern VkrState g_vkr;
 
 /* VR fork (vk_vr.c) */
 bool vkr_vr_stereo_asked(void);
+VkPhysicalDevice vkr_vr_physical_device(VkInstance instance);
 void vkr_vr_instance_extensions(const char **list, uint32_t *n, uint32_t max);
 void vkr_vr_device_extensions(const char **list, uint32_t *n, uint32_t max);
 void vkr_vr_shutdown(void);

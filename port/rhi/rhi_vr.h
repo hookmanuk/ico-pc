@@ -25,6 +25,10 @@ typedef struct RhiVrSetup {
     bool stereo;
     const char *instanceExtensions; /* space-separated, may be NULL */
     const char *deviceExtensions;   /* space-separated, may be NULL */
+    /* the runtime's GPU for the instance made (a VkPhysicalDevice from
+     * xrGetVulkanGraphicsDeviceKHR), the device the backend then takes; may
+     * be NULL */
+    void *(*physicalDevice)(void *instance);
 } RhiVrSetup;
 
 /* Before rhi_init; the strings are copied. */

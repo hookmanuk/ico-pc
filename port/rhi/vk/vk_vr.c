@@ -13,16 +13,23 @@
 #include <string.h>
 
 static bool s_stereoAsked;
+static void *(*s_physFn)(void *instance);
 static char s_instExts[2048];
 static char s_devExts[2048];
 
 void rhi_vr_setup(const RhiVrSetup *setup)
 {
     s_stereoAsked = setup && setup->stereo;
+    s_physFn = setup ? setup->physicalDevice : NULL;
     snprintf(s_instExts, sizeof(s_instExts), "%s",
              setup && setup->instanceExtensions ? setup->instanceExtensions : "");
     snprintf(s_devExts, sizeof(s_devExts), "%s",
              setup && setup->deviceExtensions ? setup->deviceExtensions : "");
+}
+
+VkPhysicalDevice vkr_vr_physical_device(VkInstance instance)
+{
+    return s_physFn ? (VkPhysicalDevice)s_physFn((void *)instance) : VK_NULL_HANDLE;
 }
 
 bool vkr_vr_stereo_asked(void)
