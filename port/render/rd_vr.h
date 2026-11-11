@@ -41,6 +41,11 @@ typedef struct RdVrFrame {
     float eye[2][7];      /* per eye: orientation x, y, z, w, position x, y, z */
     float tan[2][4];      /* per eye: tan of the left, right, up and down angles */
     uint8_t valid;
+    /* the renderer's: the picture is flat (a movie, a frame without the
+     * camera's world: boot signs, the title, menus, loading), drawn in the
+     * 4:3 box below and shown on a screen in front of the seat */
+    uint8_t flat;
+    uint32_t box[4]; /* the flat picture's box in the eyes' image: x, y, w, h */
 } RdVrFrame;
 
 /* The headset's output: two-layer RGBA8, eyeW x eyeH. */
@@ -66,6 +71,9 @@ bool rd_vr_write_png(const char *path, const uint8_t *rgba, uint32_t w, uint32_t
 /* ---- internal (port/render) ---- */
 void rd__vr_hand_over(RdVrFrame *out);         /* the game thread, at the post */
 void rd__vr_picture_begin(const RdVrFrame *f); /* the render thread, a picture's start */
+/* the picture is flat (rd__vr_picture_begin decided it), and its box in the
+ * output; false, untouched, for an eye picture */
+bool rd__vr_flat_box(uint32_t outW, uint32_t outH, RhiRect *box);
 /* FrameCB's per-view matrices: world 1 for a pass of the frame camera's
  * world (cam the picture's camera), else the identity and vrMode.x 0 */
 void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world);

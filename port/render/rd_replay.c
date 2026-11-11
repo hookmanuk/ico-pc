@@ -4499,6 +4499,7 @@ static void doShadowStripIn(Replay *r, const RdFrame *f, const RdCmd *c)
     IcoDrawCB cb;
     memset(&cb, 0, sizeof(cb));
     cb.tex[0] = cb.tex[1] = cb.tex[2] = cb.tex[3] = 1.0f;
+    cb.vr[0] = rd__vr_screen_kind(c); /* VR fork: the frame camera's volumes at the eye */
     RdUniform g1 = rd__draw_group(&cb);
     uint32_t first = 0;
     for (int decr = 0; decr < 2; decr++) {

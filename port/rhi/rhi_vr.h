@@ -50,12 +50,13 @@ bool rhi_vr_device(RhiVrDevice *out);
 uint64_t rhi_vr_submitted(void);
 
 /* The headset's thread: both layers of src (a stereo texture in
- * RHI_STATE_COPY_SRC) copied into layers 0 and 1 of dstImage (a VkImage, the
- * runtime's swapchain image of dstFormat, w x h, array size 2), once the
- * backend's timeline reaches `after`; dstImage is left in
- * COLOR_ATTACHMENT_OPTIMAL as the runtime expects.  Submitted on the
- * headset's queue; false when nothing was submitted. */
-bool rhi_vr_copy_eyes(RhiTexture src, uint64_t dstImage, uint32_t dstFormat, uint32_t w,
+ * RHI_STATE_COPY_SRC) copied into the runtime's swapchain images (VkImages,
+ * w x h, an RGBA8 format): with dstRight, layer 0 into dstImage and layer 1
+ * into dstRight (one layer each); without, into layers 0 and 1 of dstImage
+ * (array size 2); once the backend's timeline reaches `after`.  The images
+ * are left in COLOR_ATTACHMENT_OPTIMAL as the runtime expects.  Submitted on
+ * the headset's queue; false when nothing was submitted. */
+bool rhi_vr_copy_eyes(RhiTexture src, uint64_t dstImage, uint64_t dstRight, uint32_t w,
                       uint32_t h, uint64_t after);
 
 /* The headset's thread: waits up to timeoutNs for the backend's timeline to
@@ -66,6 +67,10 @@ bool rhi_vr_wait_value(uint64_t value, uint64_t timeoutNs);
  * RHI_STATE_COPY_SRC) read into left and right (width x height x 4 bytes
  * each) once the timeline reaches `after`; waits for the copy. */
 bool rhi_vr_read_eyes(RhiTexture src, uint64_t after, uint8_t *left, uint8_t *right);
+
+/* Development: a runtime swapchain image (VkImage in
+ * COLOR_ATTACHMENT_OPTIMAL, RGBA8, one layer) read into out (w x h x 4). */
+bool rhi_vr_read_image(uint64_t image, uint32_t w, uint32_t h, uint8_t *out);
 
 /* The VkFormat of an RHI format (the runtime's swapchain format choice). */
 uint32_t rhi_vr_vk_format(RhiFormat f);

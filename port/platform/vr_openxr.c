@@ -86,10 +86,10 @@ static struct {
     uint32_t eyeW, eyeH;
     char instExts[2048], devExts[2048];
 
-    XrSwapchain chain;
+    XrSwapchain chains[2]; /* one an eye */
     int64_t chainFormat;
-    uint32_t chainImages;
-    XrSwapchainImageVulkanKHR images[8];
+    uint32_t chainImages[2];
+    XrSwapchainImageVulkanKHR images[2][8];
 
     SDL_Thread *thread;
     volatile bool quit;
@@ -111,6 +111,11 @@ static struct {
     uint64_t pubId;
     RhiTexture pubTex;
     uint64_t pubTimeline;
+    bool pubFlat;        /* the picture is the flat screen's (rd_vr.h RdVrFrame.flat) */
+    uint32_t pubBox[4];  /* its box in the image */
+    bool shownFlat;      /* the last picture shown was flat */
+    char dumpChainPath[1024]; /* development: the next picture's left swapchain image */
+    uint32_t shownBox[4];
     /* the last picture shown: its views stay the layer's while no new one comes */
     bool haveShown;
     XrView shownViews[2];
@@ -468,6 +473,8 @@ static void publish(const RdVrFrame *f, RhiTexture eyes, uint64_t timeline, void
     g.pubId = f->id;
     g.pubTex = eyes;
     g.pubTimeline = timeline;
+    g.pubFlat = f->flat != 0;
+    memcpy(g.pubBox, f->box, sizeof(g.pubBox));
     SDL_BroadcastCondition(g.cond);
     SDL_UnlockMutex(g.lock);
 }
@@ -520,53 +527,77 @@ static bool makeSwapchain(void)
         VR_LOG("the runtime offers no RGBA8 swapchain format");
         return false;
     }
-    XrSwapchainCreateInfo ci = {XR_TYPE_SWAPCHAIN_CREATE_INFO};
-    ci.usageFlags = XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
-    ci.format = g.chainFormat;
-    ci.sampleCount = 1;
-    ci.width = g.eyeW;
-    ci.height = g.eyeH;
-    ci.faceCount = 1;
-    ci.arraySize = 2;
-    ci.mipCount = 1;
-    if (!xrOk(g.CreateSwapchain(g.session, &ci, &g.chain), "xrCreateSwapchain")) {
-        return false;
+    /* one swapchain an eye (one layer each): what every runtime takes */
+    for (int e = 0; e < 2; e++) {
+        XrSwapchainCreateInfo ci = {XR_TYPE_SWAPCHAIN_CREATE_INFO};
+        ci.usageFlags = XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT | XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT;
+        ci.format = g.chainFormat;
+        ci.sampleCount = 1;
+        ci.width = g.eyeW;
+        ci.height = g.eyeH;
+        ci.faceCount = 1;
+        ci.arraySize = 1;
+        ci.mipCount = 1;
+        if (!xrOk(g.CreateSwapchain(g.session, &ci, &g.chains[e]), "xrCreateSwapchain")) {
+            return false;
+        }
+        uint32_t ni = 0;
+        g.EnumerateSwapchainImages(g.chains[e], 0, &ni, NULL);
+        ni = ni < 8u ? ni : 8u;
+        for (uint32_t i = 0; i < ni; i++) {
+            g.images[e][i].type = XR_TYPE_SWAPCHAIN_IMAGE_VULKAN_KHR;
+            g.images[e][i].next = NULL;
+        }
+        if (!xrOk(g.EnumerateSwapchainImages(g.chains[e], ni, &ni,
+                                             (XrSwapchainImageBaseHeader *)g.images[e]),
+                  "xrEnumerateSwapchainImages")) {
+            return false;
+        }
+        g.chainImages[e] = ni;
     }
-    uint32_t ni = 0;
-    g.EnumerateSwapchainImages(g.chain, 0, &ni, NULL);
-    ni = ni < 8u ? ni : 8u;
-    for (uint32_t i = 0; i < ni; i++) {
-        g.images[i].type = XR_TYPE_SWAPCHAIN_IMAGE_VULKAN_KHR;
-        g.images[i].next = NULL;
-    }
-    if (!xrOk(g.EnumerateSwapchainImages(g.chain, ni, &ni,
-                                         (XrSwapchainImageBaseHeader *)g.images),
-              "xrEnumerateSwapchainImages")) {
-        return false;
-    }
-    g.chainImages = ni;
-    VR_LOG("swapchain %ux%u x2 layers, format %lld (%s), %u images", g.eyeW, g.eyeH,
-           (long long)g.chainFormat, g.chainFormat == VK_FORMAT_R8G8B8A8_SRGB ? "sRGB" : "UNORM", ni);
+    VR_LOG("swapchains %ux%u, one an eye, format %lld (%s), %u images", g.eyeW, g.eyeH,
+           (long long)g.chainFormat, g.chainFormat == VK_FORMAT_R8G8B8A8_SRGB ? "sRGB" : "UNORM",
+           g.chainImages[0]);
     return true;
 }
 
-/* the picture p into the swapchain: acquired, filled on the headset's queue,
-   released */
+/* the picture into the eyes' swapchains: acquired, filled on the headset's
+   queue, released */
 static bool showPicture(RhiTexture tex, uint64_t timeline)
 {
-    uint32_t idx = 0;
-    XrSwapchainImageAcquireInfo ai = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
-    if (!xrOk(g.AcquireSwapchainImage(g.chain, &ai, &idx), "xrAcquireSwapchainImage")) {
-        return false;
+    uint32_t idx[2] = {0, 0};
+    for (int e = 0; e < 2; e++) {
+        XrSwapchainImageAcquireInfo ai = {XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};
+        if (!xrOk(g.AcquireSwapchainImage(g.chains[e], &ai, &idx[e]), "xrAcquireSwapchainImage")) {
+            if (e == 1) {
+                XrSwapchainImageReleaseInfo ri = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+                g.ReleaseSwapchainImage(g.chains[0], &ri);
+            }
+            return false;
+        }
+        XrSwapchainImageWaitInfo wi = {XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
+        wi.timeout = XR_INFINITE_DURATION;
+        g.WaitSwapchainImage(g.chains[e], &wi);
     }
-    XrSwapchainImageWaitInfo wi = {XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};
-    wi.timeout = XR_INFINITE_DURATION;
-    g.WaitSwapchainImage(g.chain, &wi);
-    const bool ok = idx < g.chainImages &&
-                    rhi_vr_copy_eyes(tex, (uint64_t)(uintptr_t)g.images[idx].image,
-                                     (uint32_t)g.chainFormat, g.eyeW, g.eyeH, timeline);
-    XrSwapchainImageReleaseInfo ri = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
-    g.ReleaseSwapchainImage(g.chain, &ri);
+    const bool ok = idx[0] < g.chainImages[0] && idx[1] < g.chainImages[1] &&
+                    rhi_vr_copy_eyes(tex, (uint64_t)(uintptr_t)g.images[0][idx[0]].image,
+                                     (uint64_t)(uintptr_t)g.images[1][idx[1]].image, g.eyeW,
+                                     g.eyeH, timeline);
+    if (ok && g.dumpChainPath[0]) {
+        /* development (dumpEyes): the left swapchain image as the runtime
+           gets it, read before the release */
+        uint8_t *px = malloc((size_t)g.eyeW * g.eyeH * 4u);
+        if (px && rhi_vr_read_image((uint64_t)(uintptr_t)g.images[0][idx[0]].image, g.eyeW,
+                                    g.eyeH, px)) {
+            rd_vr_write_png(g.dumpChainPath, px, g.eyeW, g.eyeH);
+        }
+        free(px);
+        g.dumpChainPath[0] = '\0';
+    }
+    for (int e = 0; e < 2; e++) {
+        XrSwapchainImageReleaseInfo ri = {XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};
+        g.ReleaseSwapchainImage(g.chains[e], &ri);
+    }
     return ok;
 }
 
@@ -606,6 +637,9 @@ static void dumpEyes(RhiTexture tex, uint64_t timeline, uint64_t id)
         rd_vr_write_png(path, l, g.eyeW, g.eyeH);
         snprintf(path, sizeof(path), "%s\\eye_%06llu_R.png", dir, (unsigned long long)id);
         rd_vr_write_png(path, r, g.eyeW, g.eyeH);
+        /* and the next picture's left swapchain image as the runtime gets it */
+        snprintf(g.dumpChainPath, sizeof(g.dumpChainPath), "%s\\chain_%06llu_L.png", dir,
+                 (unsigned long long)id + 1u);
         VR_LOG("dumped the eyes of picture %llu", (unsigned long long)id);
     }
     free(l);
@@ -688,7 +722,8 @@ static int frameLoop(void *arg)
         /* the picture drawn with these views: up to two and a half display
            periods (a slow picture makes this frame late, which the runtime
            sees and fills; a loading screen's missing one keeps the last) */
-        bool fresh = false;
+        bool fresh = false, flat = false;
+        uint32_t box[4] = {0, 0, 0, 0};
         RhiTexture tex = {0};
         uint64_t timeline = 0;
         if (views) {
@@ -708,6 +743,8 @@ static int frameLoop(void *arg)
                 fresh = true;
                 tex = g.pubTex;
                 timeline = g.pubTimeline;
+                flat = g.pubFlat;
+                memcpy(box, g.pubBox, sizeof(box));
                 g.pubReady = false;
             }
             SDL_UnlockMutex(g.lock);
@@ -717,6 +754,8 @@ static int frameLoop(void *arg)
             g.shownViews[0] = g.raw[id % 8].v[0];
             g.shownViews[1] = g.raw[id % 8].v[1];
             g.haveShown = true;
+            g.shownFlat = flat;
+            memcpy(g.shownBox, box, sizeof(g.shownBox));
             g.newPictures++;
             dumpEyes(tex, timeline, id);
         }
@@ -731,18 +770,45 @@ static int frameLoop(void *arg)
                 pv[v] = (XrCompositionLayerProjectionView){XR_TYPE_COMPOSITION_LAYER_PROJECTION_VIEW};
                 pv[v].pose = g.shownViews[v].pose;
                 pv[v].fov = g.shownViews[v].fov;
-                pv[v].subImage.swapchain = g.chain;
+                pv[v].subImage.swapchain = g.chains[v];
                 pv[v].subImage.imageRect.offset.x = 0;
                 pv[v].subImage.imageRect.offset.y = 0;
                 pv[v].subImage.imageRect.extent.width = (int32_t)g.eyeW;
                 pv[v].subImage.imageRect.extent.height = (int32_t)g.eyeH;
-                pv[v].subImage.imageArrayIndex = (uint32_t)v;
+                pv[v].subImage.imageArrayIndex = 0;
             }
             layer.space = g.local;
             layer.viewCount = 2;
             layer.views = pv;
             fei.layerCount = 1;
             fei.layers = layers;
+        }
+        /* a flat picture (rd_vr.h RdVrFrame.flat): its 4:3 box of the left
+           eye's layer on a screen 3 m wide, 2.6 m ahead of the seat, level */
+        XrCompositionLayerQuad quad = {XR_TYPE_COMPOSITION_LAYER_QUAD};
+        const XrCompositionLayerBaseHeader *quadLayers[1] = {
+            (const XrCompositionLayerBaseHeader *)&quad};
+        if (fs.shouldRender && g.haveShown && g.shownFlat && g.shownBox[2] && g.shownBox[3]) {
+            quad.space = g.local;
+            quad.eyeVisibility = XR_EYE_VISIBILITY_BOTH;
+            quad.subImage.swapchain = g.chains[0];
+            quad.subImage.imageRect.offset.x = (int32_t)g.shownBox[0];
+            quad.subImage.imageRect.offset.y = (int32_t)g.shownBox[1];
+            quad.subImage.imageRect.extent.width = (int32_t)g.shownBox[2];
+            quad.subImage.imageRect.extent.height = (int32_t)g.shownBox[3];
+            quad.subImage.imageArrayIndex = 0;
+            const float yaw = g.refYaw, dist = 2.6f;
+            quad.pose.orientation.x = 0.0f;
+            quad.pose.orientation.y = sinf(yaw * 0.5f);
+            quad.pose.orientation.z = 0.0f;
+            quad.pose.orientation.w = cosf(yaw * 0.5f);
+            quad.pose.position.x = g.refPos.x - dist * sinf(yaw);
+            quad.pose.position.y = g.refPos.y;
+            quad.pose.position.z = g.refPos.z - dist * cosf(yaw);
+            quad.size.width = 3.0f;
+            quad.size.height = 3.0f * (float)g.shownBox[3] / (float)g.shownBox[2];
+            fei.layerCount = 1;
+            fei.layers = quadLayers;
         }
         xrOk(g.EndFrame(g.session, &fei), "xrEndFrame");
         double t3 = nowMs();
@@ -838,8 +904,10 @@ void ico_vr_stop(void)
     if (g.session && g.running) {
         g.RequestExitSession(g.session);
     }
-    if (g.chain) {
-        g.DestroySwapchain(g.chain);
+    for (int e = 0; e < 2; e++) {
+        if (g.chains[e]) {
+            g.DestroySwapchain(g.chains[e]);
+        }
     }
     if (g.local) {
         g.DestroySpace(g.local);

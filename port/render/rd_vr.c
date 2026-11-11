@@ -105,9 +105,50 @@ void rd__vr_hand_over(RdVrFrame *out)
     vrUnlock();
 }
 
+/* the picture is flat: a movie, or the frame has no camera or draws no
+   mesh, skinned or grid in the world's lists (0 .. 10) */
+static bool pictureFlat(void)
+{
+    if (g_rd.videoShown) {
+        return true;
+    }
+    const RdFrame *fr = rd__last_frame();
+    if (!fr || !fr->hasCamera) {
+        return true;
+    }
+    for (int l = 0; l <= 10 && l < RD_LIST_COUNT; l++) {
+        const RdCmdList *cl = &fr->lists[l];
+        for (uint32_t i = 0; i < cl->count; i++) {
+            const uint8_t t = cl->cmds[i].type;
+            if (t == RDC_MESH || t == RDC_SKINNED || t == RDC_GRID) {
+                return false;
+            }
+        }
+    }
+    return true;
+}
+
 void rd__vr_picture_begin(const RdVrFrame *f)
 {
     s_vr.cur = *f;
+    s_vr.cur.flat = s_vr.on && pictureFlat() ? 1u : 0u;
+    if (s_vr.cur.flat) {
+        RhiRect b;
+        rd__present_box(s_vr.eyeW, s_vr.eyeH, 4.0f / 3.0f, &b);
+        s_vr.cur.box[0] = (uint32_t)b.x;
+        s_vr.cur.box[1] = (uint32_t)b.y;
+        s_vr.cur.box[2] = b.w;
+        s_vr.cur.box[3] = b.h;
+    }
+}
+
+bool rd__vr_flat_box(uint32_t outW, uint32_t outH, RhiRect *box)
+{
+    if (!s_vr.on || !s_vr.cur.flat) {
+        return false;
+    }
+    rd__present_box(outW, outH, 4.0f / 3.0f, box);
+    return true;
 }
 
 /* ------------------------------------------------------------ the maths
@@ -253,7 +294,7 @@ void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world)
         cb->vrMode[3] = s_tint ? 1.0f : 0.0f;
     }
     const RdVrFrame *f = &s_vr.cur;
-    if (!s_vr.on || !world || !cam || !f->valid) {
+    if (!s_vr.on || !world || !cam || !f->valid || f->flat) {
         return;
     }
     double S[16], Si[16];
@@ -296,6 +337,22 @@ void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world)
             }
         }
         eyeScreen(f->tan[v], S, Se);
+        {
+            /* development: ICO_VR_TEST_GAMEFOV=1 draws both eyes from the
+               camera itself through its own picture (no head, no eye
+               distance), the flat game's picture in each eye: D the
+               identity up to rounding (a check of everything but the
+               eyes' own transform) */
+            static int s_gameFov = -1;
+            if (s_gameFov < 0) {
+                const char *e = getenv("ICO_VR_TEST_GAMEFOV");
+                s_gameFov = e && e[0] == '1';
+            }
+            if (s_gameFov) {
+                ident(E);
+                memcpy(Se, S, sizeof(Se));
+            }
+        }
         mul4(Se, E, D);
         mul4(D, Si, D);
         toFloat(D, cb->vrScreen[v]);
@@ -322,10 +379,18 @@ uint32_t rd__vr_screen_kind(const void *cmd)
         return 0;
     }
     if (c->type == RDC_SCREEN) {
-        return c->b[4] == RD_SCREEN_FRAME_CAMERA && c->b[1] == RD_SPACE_WORLD &&
-                       c->b[0] != RD_PRIM_SPRITES && c->b[3] == 0
+        /* the interpolation's test (rd_interp.c frameProjected) but for
+           the sprites: a sprite the camera projected is a billboard at one
+           depth (its corners expanded on the CPU with one Z, rd_replay.c
+           expand), whose corners the eye's transform places on its plane */
+        return c->b[4] == RD_SCREEN_FRAME_CAMERA && c->b[1] == RD_SPACE_WORLD && c->b[3] == 0
                    ? 1u
                    : 0u;
+    }
+    if (c->type == RDC_SHADOW_STRIP) {
+        /* a shadow volume the frame camera projected (rd_interp.c
+           frameProjected's test) */
+        return c->b[0] == RD_SHADOW_TRIS && c->b[1] == RD_SHADOW_FRAME_CAMERA ? 1u : 0u;
     }
     return 0;
 }

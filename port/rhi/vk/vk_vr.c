@@ -159,9 +159,10 @@ static bool vrCommandsReady(void)
     return true;
 }
 
-static void imageBarrier(VkCommandBuffer cb, VkImage image, VkImageLayout from, VkImageLayout to,
-                         VkAccessFlags srcAccess, VkAccessFlags dstAccess,
-                         VkPipelineStageFlags srcStage, VkPipelineStageFlags dstStage)
+static void imageBarrierLayers(VkCommandBuffer cb, VkImage image, uint32_t layers,
+                               VkImageLayout from, VkImageLayout to, VkAccessFlags srcAccess,
+                               VkAccessFlags dstAccess, VkPipelineStageFlags srcStage,
+                               VkPipelineStageFlags dstStage)
 {
     const VkImageMemoryBarrier b = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
@@ -172,15 +173,14 @@ static void imageBarrier(VkCommandBuffer cb, VkImage image, VkImageLayout from, 
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .image = image,
-        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 2},
+        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, layers},
     };
     vkCmdPipelineBarrier(cb, srcStage, dstStage, 0, 0, NULL, 0, NULL, 1, &b);
 }
 
-bool rhi_vr_copy_eyes(RhiTexture src, uint64_t dstImage, uint32_t dstFormat, uint32_t w,
+bool rhi_vr_copy_eyes(RhiTexture src, uint64_t dstImage, uint64_t dstRight, uint32_t w,
                       uint32_t h, uint64_t after)
 {
-    (void)dstFormat;
     VkrTexture *s = vkr_get_texture(src);
     if (!s || !dstImage || !vrCommandsReady()) {
         return false;
@@ -194,23 +194,60 @@ bool rhi_vr_copy_eyes(RhiTexture src, uint64_t dstImage, uint32_t dstFormat, uin
                                          .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
     VkCommandBuffer cb = s_cmds[i];
     vkBeginCommandBuffer(cb, &bi);
-    const VkImage dst = (VkImage)(uintptr_t)dstImage;
-    imageBarrier(cb, dst, VK_IMAGE_LAYOUT_UNDEFINED, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0,
-                 VK_ACCESS_TRANSFER_WRITE_BIT, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                 VK_PIPELINE_STAGE_TRANSFER_BIT);
+    /* dstRight: one image an eye (each one layer); else dstImage holds both
+       eyes as its two layers */
+    const VkImage dsts[2] = {(VkImage)(uintptr_t)dstImage, (VkImage)(uintptr_t)dstRight};
+    const uint32_t nDst = dstRight ? 2u : 1u;
+    const uint32_t dstLayers = dstRight ? 1u : 2u;
+    for (uint32_t d = 0; d < nDst; d++) {
+        imageBarrierLayers(cb, dsts[d], dstLayers, VK_IMAGE_LAYOUT_UNDEFINED,
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                           VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    }
     const uint32_t cw = w < s->width ? w : s->width, ch = h < s->height ? h : s->height;
-    const uint32_t layers = s->layers < 2u ? s->layers : 2u;
-    const VkImageCopy copy = {
-        .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, layers},
-        .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, layers},
-        .extent = {cw, ch, 1},
-    };
-    vkCmdCopyImage(cb, s->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dst,
-                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
-    imageBarrier(cb, dst, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
-                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
-                 VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-                 VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    if (dstRight) {
+        for (uint32_t d = 0; d < 2; d++) {
+            static int s_blit = -1; /* ICO_VR_BLIT=1: a blit, not a copy (an A/B) */
+            if (s_blit < 0) {
+                const char *e = getenv("ICO_VR_BLIT");
+                s_blit = e && e[0] == '1';
+            }
+            if (s_blit) {
+                const VkImageBlit blit = {
+                    .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, d < s->layers ? d : 0u, 1},
+                    .srcOffsets = {{0, 0, 0}, {(int32_t)cw, (int32_t)ch, 1}},
+                    .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+                    .dstOffsets = {{0, 0, 0}, {(int32_t)cw, (int32_t)ch, 1}},
+                };
+                vkCmdBlitImage(cb, s->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dsts[d],
+                               VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_NEAREST);
+                continue;
+            }
+            const VkImageCopy copy = {
+                .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, d < s->layers ? d : 0u, 1},
+                .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+                .extent = {cw, ch, 1},
+            };
+            vkCmdCopyImage(cb, s->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dsts[d],
+                           VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+        }
+    } else {
+        const uint32_t layers = s->layers < 2u ? s->layers : 2u;
+        const VkImageCopy copy = {
+            .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, layers},
+            .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, layers},
+            .extent = {cw, ch, 1},
+        };
+        vkCmdCopyImage(cb, s->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, dsts[0],
+                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &copy);
+    }
+    for (uint32_t d = 0; d < nDst; d++) {
+        imageBarrierLayers(cb, dsts[d], dstLayers, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_TRANSFER_WRITE_BIT,
+                           VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                           VK_PIPELINE_STAGE_TRANSFER_BIT,
+                           VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    }
     vkEndCommandBuffer(cb);
     const bool timeline = g_vkr.syncKind == VKR_SYNC_TIMELINE && after != 0;
     const VkTimelineSemaphoreSubmitInfo ti = {
@@ -339,6 +376,85 @@ bool rhi_vr_read_eyes(RhiTexture src, uint64_t after, uint8_t *left, uint8_t *ri
     if (ok && vkMapMemory(g_vkr.device, mem, 0, layerBytes * 2u, 0, &p) == VK_SUCCESS) {
         memcpy(left, p, (size_t)layerBytes);
         memcpy(right, (const uint8_t *)p + layerBytes, (size_t)layerBytes);
+        vkUnmapMemory(g_vkr.device, mem);
+    } else {
+        ok = false;
+    }
+    vkDestroyBuffer(g_vkr.device, buf, NULL);
+    vkFreeMemory(g_vkr.device, mem, NULL);
+    return ok;
+}
+
+/* Development: a runtime swapchain image (COLOR_ATTACHMENT_OPTIMAL, RGBA8,
+   one layer) read into out (w x h x 4) on the headset's queue, waiting for
+   it: what the runtime gets, beside what rhi_vr_read_eyes reads */
+bool rhi_vr_read_image(uint64_t image, uint32_t w, uint32_t h, uint8_t *out)
+{
+    if (!image || !out || !vrCommandsReady()) {
+        return false;
+    }
+    const VkDeviceSize bytes = (VkDeviceSize)w * h * 4u;
+    const VkBufferCreateInfo bci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                                    .size = bytes,
+                                    .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                    .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+    VkBuffer buf = VK_NULL_HANDLE;
+    if (vkCreateBuffer(g_vkr.device, &bci, NULL, &buf) != VK_SUCCESS) {
+        return false;
+    }
+    VkMemoryRequirements req;
+    vkGetBufferMemoryRequirements(g_vkr.device, buf, &req);
+    VkPhysicalDeviceMemoryProperties mp;
+    vkGetPhysicalDeviceMemoryProperties(g_vkr.phys, &mp);
+    uint32_t type = UINT32_MAX;
+    const VkMemoryPropertyFlags want =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    for (uint32_t i = 0; i < mp.memoryTypeCount; i++) {
+        if ((req.memoryTypeBits & (1u << i)) && (mp.memoryTypes[i].propertyFlags & want) == want) {
+            type = i;
+            break;
+        }
+    }
+    VkDeviceMemory mem = VK_NULL_HANDLE;
+    const VkMemoryAllocateInfo mai = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                                      .allocationSize = req.size,
+                                      .memoryTypeIndex = type};
+    if (type == UINT32_MAX || vkAllocateMemory(g_vkr.device, &mai, NULL, &mem) != VK_SUCCESS) {
+        vkDestroyBuffer(g_vkr.device, buf, NULL);
+        return false;
+    }
+    vkBindBufferMemory(g_vkr.device, buf, mem, 0);
+    const uint32_t i = s_next;
+    s_next = (s_next + 1u) % VR_CMDS;
+    vkWaitForFences(g_vkr.device, 1, &s_fences[i], VK_TRUE, UINT64_MAX);
+    vkResetFences(g_vkr.device, 1, &s_fences[i]);
+    vkResetCommandBuffer(s_cmds[i], 0);
+    const VkCommandBufferBeginInfo bi = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                                         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    VkCommandBuffer cb = s_cmds[i];
+    vkBeginCommandBuffer(cb, &bi);
+    const VkImage img = (VkImage)(uintptr_t)image;
+    imageBarrierLayers(cb, img, 1, VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                       VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_TRANSFER_WRITE_BIT,
+                       VK_ACCESS_TRANSFER_READ_BIT, VK_PIPELINE_STAGE_ALL_COMMANDS_BIT,
+                       VK_PIPELINE_STAGE_TRANSFER_BIT);
+    const VkBufferImageCopy r = {.imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+                                 .imageExtent = {w, h, 1}};
+    vkCmdCopyImageToBuffer(cb, img, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buf, 1, &r);
+    imageBarrierLayers(cb, img, 1, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                       VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_ACCESS_TRANSFER_READ_BIT,
+                       VK_ACCESS_COLOR_ATTACHMENT_READ_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT,
+                       VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT);
+    vkEndCommandBuffer(cb);
+    const VkSubmitInfo si = {.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+                             .commandBufferCount = 1,
+                             .pCommandBuffers = &cb};
+    bool ok = vkQueueSubmit(g_vkr.vrQueue, 1, &si, s_fences[i]) == VK_SUCCESS &&
+              vkWaitForFences(g_vkr.device, 1, &s_fences[i], VK_TRUE, 2000000000ull) == VK_SUCCESS;
+    void *p = NULL;
+    if (ok && vkMapMemory(g_vkr.device, mem, 0, bytes, 0, &p) == VK_SUCCESS) {
+        memcpy(out, p, (size_t)bytes);
         vkUnmapMemory(g_vkr.device, mem);
     } else {
         ok = false;

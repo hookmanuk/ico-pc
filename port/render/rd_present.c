@@ -192,8 +192,11 @@ bool rd__frame_cropped(void)
 static void outputBox(uint32_t outW, uint32_t outH, RhiRect *box)
 {
     if (rd_vr_active()) {
-        /* VR fork: the eye's whole image is the frame (rd_vr.h) */
-        *box = (RhiRect){0, 0, outW, outH};
+        /* VR fork: the eye's whole image is the frame; a flat picture is a
+         * 4:3 box for the screen in front of the seat (rd_vr.h) */
+        if (!rd__vr_flat_box(outW, outH, box)) {
+            *box = (RhiRect){0, 0, outW, outH};
+        }
         return;
     }
     const float we = rd__frame_wexact();
