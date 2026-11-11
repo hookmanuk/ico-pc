@@ -964,7 +964,7 @@ RdUniform rd__frame_group_ex(uint32_t targetW, uint32_t targetH, float originX, 
     /* VR fork (rd_vr.h): the eyes' matrices where the frame camera's
      * picture (not a reflection camera's) is drawn */
     rd__vr_fill_frame_cb(&cb, s_hasReplayCam ? &s_replayCam : NULL,
-                         s_hasReplayCam && (s_framePicture & 0xFFFFu) == 0u);
+                         s_hasReplayCam && ((s_framePicture & 0xFFFFu) == 0u || rd__vr_picture_on()));
     cb.target[0] = (float)targetW;
     cb.target[1] = (float)targetH;
     cb.target[2] = 1.0f / (float)targetW;
@@ -3220,6 +3220,9 @@ static void fillDrawCB(const Replay *r, const RdDrawPass *dp, const DrawSetup *d
             }
         }
         cb->vr[0] = k;
+        if (k == 1u) {
+            rd__vr_st_shift(s_vrScreenCmd, &cb->vr[1]);
+        }
     }
     /* a pass the storage pass merge draws through the destination read
      * without GS blending: Cs (rd__dst_merge) */

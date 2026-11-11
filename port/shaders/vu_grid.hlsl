@@ -25,6 +25,9 @@ VuVtx vu_grid_vertex(uint v, uint variant)
     float4 st = vu_stream_f(at + (lit ? 2u : 1u));
     // mesh.vsm:172-175 M * pos (vf00.w), :179 div, :188 mulq
     o.h = vu_matm(16u, pos, 1.0);
+#ifdef ICO_VR
+    float4 hc = o.h; // VR fork: the camera's screen position (rd_vr.h rd__vr_grid_st)
+#endif
     float q = vu_divide(o);
     o.inside = vu_inside(o.p, o.h.w, VU_LO0, VU_HI4094);
     {
@@ -46,6 +49,13 @@ VuVtx vu_grid_vertex(uint v, uint variant)
             o.rgba = vu_rgba(col); // :368 ftoi0 of the batch colour, no clamp
         }
         // :177 add.xy ST + UV offset; :189 mulq.xyz
+#ifdef ICO_VR
+        // VR fork: STs pool.c made from the camera's screen position follow
+        // the eye's (VuCB qword 20: S and T per GS pixel)
+        if (g_vrMode.x != 0.0 && VU_MEM(20).z != 0.0 && hc.w != 0.0) {
+            st.xy += (o.p - hc.xy / hc.w) * VU_MEM(20).xy;
+        }
+#endif
         precise float3 s = float3(st.xy + VU_MEM(2).xy, st.z) * q;
         o.stq = s;
     }

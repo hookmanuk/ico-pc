@@ -627,6 +627,15 @@ SpriteStqVSOut sprite_stq_vertex(SpriteStqVSIn i)
     // VR fork: at the eye, S, T and Q over the eye's w (the GS's screen-linear
     // S / Q kept: the w cancels in the per-pixel divide)
     if (gs_eye_position(i.xy, i.z, o.pos)) {
+        if (g_vr.y != 0u || g_vr.z != 0u) {
+            // the puddle's ripples (RD_SCREEN_ST_SHIFT): S / Q and T / Q
+            // follow the eye's screen move in 12.4 units (rd_interp.c
+            // reprojStShift)
+            float4 he = mul(g_vrScreen[g_viewIndex],
+                            float4(float2(i.xy) * (1.0 / 16.0), float(i.z) * (1.0 / 16.0), 1.0));
+            float2 d = (he.xy / he.w - float2(i.xy) * (1.0 / 16.0)) * 16.0;
+            o.stq.xy += d * float2(asfloat(g_vr.y), asfloat(g_vr.z)) * o.stq.z;
+        }
         o.stq = o.stq / o.pos.w;
     }
 #endif

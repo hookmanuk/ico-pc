@@ -4,6 +4,7 @@
 #include "ico_thread.h"
 #include "../rhi/rhi_vr.h"
 #include <math.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -138,6 +139,8 @@ static bool pictureFlatWhy(const char **why, uint32_t *frameNo)
     return true;
 }
 
+static uint32_t s_dbgPic, s_dbgPicMiss, s_dbgGrid[RD_GRID_ST_COUNT], s_dbgShift, s_dbgFrames;
+
 static bool pictureFlat(void)
 {
     static int s_last = -1;
@@ -153,6 +156,13 @@ static bool pictureFlat(void)
 
 void rd__vr_picture_begin(const RdVrFrame *f)
 {
+    if (++s_dbgFrames % 900u == 0u) {
+        rd__log("VR: water: reflection draws %u (no camera %u), grids surface %u reflect %u ripple %u/%u, "
+                "shifted screen draws %u",
+                s_dbgPic, s_dbgPicMiss, s_dbgGrid[1], s_dbgGrid[2], s_dbgGrid[3], s_dbgGrid[4], s_dbgShift);
+        s_dbgPic = s_dbgPicMiss = s_dbgShift = 0;
+        memset(s_dbgGrid, 0, sizeof(s_dbgGrid));
+    }
     s_vr.cur = *f;
     s_vr.cur.flat = s_vr.on && pictureFlat() ? 1u : 0u;
     if (s_vr.cur.flat) {
@@ -298,6 +308,91 @@ static void eyeScreen(const float *tan, const double *S, double *o)
 
 static void hudMatrices(IcoFrameCB *cb);
 
+/* the reflection camera of the VU draw being replayed (render thread) */
+static const RdCamera *s_picCam;
+
+void rd__vr_picture_camera(const void *frame, const void *cmd)
+{
+    s_picCam = NULL;
+    const RdFrame *f = (const RdFrame *)frame;
+    const RdCmd *c = (const RdCmd *)cmd;
+    if (!f || !c) {
+        return;
+    }
+    for (int l = 0; l < RD_LIST_COUNT; l++) {
+        const RdCmdList *L = &f->lists[l];
+        if (L->cmds && c >= L->cmds && c < L->cmds + L->count) {
+            const RdCamera *cam = rd__camera_at(f, l, (uint32_t)(c - L->cmds));
+            if (!cam || cam->pictureW == 0) {
+                /* the presenter's blended copy of the frame: the scopes are
+                 * its source's (the same number), matched by list and picture */
+                cam = NULL;
+                for (int i = 0; i < RD_FRAME_RING && !cam; i++) {
+                    const RdFrame *src = &g_rd.frames[i];
+                    const RdCameraScope *sc = NULL;
+                    const uint32_t n = src->number == f->number ? rd__camera_scopes(src, &sc) : 0u;
+                    for (uint32_t k = 0; k < n; k++) {
+                        if (sc[k].list == l && sc[k].cam.pictureW == c->b[3] &&
+                            sc[k].cam.pictureH == c->b[6]) {
+                            cam = &sc[k].cam;
+                            if (c - L->cmds >= (ptrdiff_t)sc[k].start &&
+                                c - L->cmds < (ptrdiff_t)sc[k].end) {
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+            if (cam && cam->pictureW != 0) {
+                s_picCam = cam;
+                s_dbgPic++;
+            } else {
+                s_dbgPicMiss++;
+            }
+            return;
+        }
+    }
+}
+
+bool rd__vr_picture_on(void)
+{
+    return s_picCam != NULL;
+}
+
+void rd__vr_grid_st(const void *cmd, float out[4])
+{
+    const RdCmd *c = (const RdCmd *)cmd;
+    out[0] = out[1] = out[2] = out[3] = 0.0f;
+    if (!c || c->type != RDC_GRID) {
+        return;
+    }
+    const uint8_t kind = c->b[5];
+    if (kind == RD_GRID_ST_NONE || kind >= RD_GRID_ST_COUNT || !(c->f[0] > 0.0f) ||
+        !(c->f[1] > 0.0f)) {
+        return;
+    }
+    /* rd_interp.c rd__grid_screen_st: s = (x - 2048) sx + ..., REFLECT's
+     * with 0.8 sx; the rest of each formula is kept at the camera's */
+    const float k = kind == RD_GRID_ST_REFLECT ? c->f[0] * 0.8f : c->f[0];
+    const float kt = kind == RD_GRID_ST_REFLECT ? c->f[1] * 0.8f : c->f[1];
+    out[0] = k;
+    out[1] = kt;
+    out[2] = 1.0f;
+    s_dbgGrid[kind]++;
+}
+
+void rd__vr_st_shift(const void *cmd, uint32_t out[2])
+{
+    const RdCmd *c = (const RdCmd *)cmd;
+    out[0] = out[1] = 0u;
+    if (!c || c->type != RDC_SCREEN || c->b[5] != RD_SCREEN_ST_SHIFT) {
+        return;
+    }
+    memcpy(&out[0], &c->f[0], 4);
+    memcpy(&out[1], &c->f[1], 4);
+    s_dbgShift++;
+}
+
 void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world)
 {
     double id[16];
@@ -329,6 +424,21 @@ void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world)
     }
     if (!inv4(S, Si)) {
         return;
+    }
+    /* a reflection camera's pass: K = S_r S^-1 (its screen over the frame
+     * camera's, the same view), D_r = K D K^-1, its own depth row */
+    double K[16], Ki[16];
+    const bool refl = s_picCam != NULL;
+    if (refl) {
+        double Sr[16], Sri[16];
+        for (int i = 0; i < 16; i++) {
+            Sr[i] = s_picCam->proj[i];
+        }
+        if (!inv4(Sr, Sri)) {
+            return;
+        }
+        mul4(Sr, Si, K);
+        mul4(S, Sri, Ki);
     }
     double G[16], Gi[16];
     bool clip = false;
@@ -381,6 +491,11 @@ void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world)
         }
         mul4(Se, E, D);
         mul4(D, Si, D);
+        if (refl) {
+            double T[16];
+            mul4(K, D, T);
+            mul4(T, Ki, D);
+        }
         toFloat(D, cb->vrScreen[v]);
         if (v == 0) {
             /* the particles' extent (vu_particle.hlsl): the eye's scale over
@@ -393,9 +508,10 @@ void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world)
                W = z) to clip space: x, y over a guard band of 2048 GS pixels
                about the frame's middle, z the game's own (n, f: the
                camera's near and far), w = W */
-            const double g = 2048.0, zn = S[10], zf = S[14];
-            const double n = cam->nearZ > 0.0f ? (double)cam->nearZ : 2.0;
-            const double fa = cam->farZ > n ? (double)cam->farZ : 262144.0;
+            const RdCamera *zc = refl ? s_picCam : cam;
+            const double g = 2048.0, zn = (double)zc->proj[10], zf = (double)zc->proj[14];
+            const double n = zc->nearZ > 0.0f ? (double)zc->nearZ : 2.0;
+            const double fa = zc->farZ > n ? (double)zc->farZ : 262144.0;
             const double A = (fa + n) / (fa - n), B = -2.0 * fa * n / (fa - n);
             double C[16];
             memset(C, 0, sizeof(C));

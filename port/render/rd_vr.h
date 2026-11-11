@@ -77,6 +77,19 @@ bool rd__vr_flat_box(uint32_t outW, uint32_t outH, RhiRect *box);
 /* FrameCB's per-view matrices: world 1 for a pass of the frame camera's
  * world (cam the picture's camera), else the identity and vrMode.x 0 */
 void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world);
+/* the reflection camera (rd_push_camera's scope) of the VU draw being
+ * replayed, NULL after it: a pass under its picture (FrameCB key picture != 0)
+ * takes K D_v K^-1, K = its screen over the frame camera's (the same view,
+ * the mirror in the model) */
+void rd__vr_picture_camera(const void *frame, const void *cmd); /* RdFrame, RdCmd */
+bool rd__vr_picture_on(void); /* a reflection camera is set */
+/* VuCB qword 20 of a grid (RDC_GRID) whose STs pool.c made from the frame
+ * camera's screen (RdGridSt): x, y the S and T per GS pixel, z 1; zero
+ * otherwise (vu_grid.hlsl moves each vertex's ST by its eye's screen move) */
+void rd__vr_grid_st(const void *cmd, float out[4]);
+/* DrawCB.vr.y, z of a screen draw marked RD_SCREEN_ST_SHIFT (the puddle's
+ * ripples): its S / Q and T / Q per 12.4 unit, as float bits */
+void rd__vr_st_shift(const void *cmd, uint32_t out[2]);
 /* the picture's output: a ring slot of the eyes' size, its state in *state
  * (written back by rd__vr_recorded) */
 RhiTexture rd__vr_output(RhiTextureDesc *desc, RhiState *state);

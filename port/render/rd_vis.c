@@ -375,8 +375,11 @@ int rd__vis_test(const float (*m)[4], const RdVisBox *b, bool scissor, const RdV
 static int visTestEyes(const float (*m)[4], const RdVisBox *b, bool scissor, const RdVisRect *r,
                        bool frameCamera)
 {
-    if (!s_vrEyes || !frameCamera) {
+    if (!s_vrEyes) {
         return rd__vis_test(m, b, scissor, r);
+    }
+    if (!frameCamera) {
+        return RD_VIS_KEEP; /* a reflection camera's: its eyes see past its own picture */
     }
     int keep = 0, v = RD_VIS_KEEP;
     for (int e = 0; e < 2 && !keep; e++) {

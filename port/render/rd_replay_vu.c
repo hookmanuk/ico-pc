@@ -1460,6 +1460,9 @@ static bool vuSource(const RdFrame *f, const RdCmd *c, VuSource *s)
     IcoVuCB vcb;
     memset(&vcb, 0, sizeof(vcb));
     memcpy(vcb.mem, at, sizeof(RdVuBlock));
+    if (c->type == RDC_GRID && rd_vr_active()) {
+        rd__vr_grid_st(c, vcb.mem[20]); /* VR fork: the pool's STs at each eye */
+    }
     at += sizeof(RdVuBlock);
     const uint8_t *bones = p.boneQw ? at : NULL;
     at += (size_t)p.boneQw * 16;
@@ -3592,10 +3595,14 @@ static void doVuDraw(Replay *r, const RdFrame *f, const RdCmd *c);
 void rd__replay_vu(Replay *r, const RdFrame *f, const RdCmd *c)
 {
     r->picture = (uint32_t)c->b[3] | ((uint32_t)c->b[6] << 8);
+    if (r->picture != 0u && rd_vr_active()) {
+        rd__vr_picture_camera(f, c); /* VR fork: the reflection's eyes */
+    }
     vuVelMaybe(r); /* the walk past list 0: the velocity pass first */
     doVuDraw(r, f, c);
     s_velArm = NULL;
     r->picture = 0;
+    rd__vr_picture_camera(NULL, NULL);
 }
 
 static void doVuDraw(Replay *r, const RdFrame *f, const RdCmd *c)
