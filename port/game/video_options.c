@@ -14,6 +14,7 @@
 #define ASPECT_32_9 (32.0f / 9.0f)
 #define ASPECT_48_9 (48.0f / 9.0f)
 
+static int s_vrFrame; /* VR fork: ico_video_vr_frame */
 static IcoVideoOptions s_opt;
 
 static int s_read;
@@ -877,8 +878,6 @@ void ico_video_set_window(int w, int h)
     s_winH = h > 0 ? h : 0;
 }
 
-static int s_vrFrame; /* VR fork: ico_video_vr_frame */
-
 void ico_video_vr_frame(int on)
 {
     s_vrFrame = on;
@@ -1041,6 +1040,9 @@ int ico_video_effect_cinematic_bars(void)
 {
     if (!s_read) {
         read_config();
+    }
+    if (s_vrFrame) {
+        return 0; /* VR fork: a letterbox fixed to the eyes is no picture's (rd_vr.h) */
     }
     return s_opt.effectCinematicBars;
 }

@@ -60,6 +60,9 @@ typedef void (*RdVrPublishFn)(const RdVrFrame *f, RhiTexture eyes, uint64_t time
                               void *user);
 void rd_vr_set_publish(RdVrPublishFn fn, void *user);
 
+/* Development: an RGBA8 image written as a PNG (rd_png.c) */
+bool rd_vr_write_png(const char *path, const uint8_t *rgba, uint32_t w, uint32_t h);
+
 /* ---- internal (port/render) ---- */
 void rd__vr_hand_over(RdVrFrame *out);         /* the game thread, at the post */
 void rd__vr_picture_begin(const RdVrFrame *f); /* the render thread, a picture's start */

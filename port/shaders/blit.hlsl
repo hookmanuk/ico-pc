@@ -62,6 +62,11 @@ uint4 blit_color(float2 uv)
 
 float4 blit_ps(BlitVSOut i) : SV_Target0
 {
+#ifdef ICO_VR
+    if (g_vrMode.w != 0.0 && g_viewIndex == 1u) {
+        return float4(1.0, 0.0, 0.0, 1.0); // development: ICO_VR_TEST_TINT (rd_vr.c)
+    }
+#endif
     return float4(blit_color(i.uv)) * (1.0 / 255.0);
 }
 

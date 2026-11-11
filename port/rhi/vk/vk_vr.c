@@ -231,7 +231,18 @@ bool rhi_vr_copy_eyes(RhiTexture src, uint64_t dstImage, uint32_t dstFormat, uin
     if (!timeline && after) {
         rhi_vr_wait_value(after, 100000000ull);
     }
-    return vkQueueSubmit(g_vkr.vrQueue, 1, &si, s_fences[i]) == VK_SUCCESS;
+    const bool ok = vkQueueSubmit(g_vkr.vrQueue, 1, &si, s_fences[i]) == VK_SUCCESS;
+    /* ICO_VR_COPY_WAIT=1: the copy finished before the image is released (a
+       runtime that reads the image without waiting on the headset's queue) */
+    static int s_wait = -1;
+    if (s_wait < 0) {
+        const char *e = getenv("ICO_VR_COPY_WAIT");
+        s_wait = e && e[0] == '1';
+    }
+    if (ok && s_wait) {
+        vkWaitForFences(g_vkr.device, 1, &s_fences[i], VK_TRUE, 1000000000ull);
+    }
+    return ok;
 }
 
 void vkr_vr_shutdown(void)
@@ -250,4 +261,89 @@ void vkr_vr_shutdown(void)
     }
     vkDestroyCommandPool(g_vkr.device, s_pool, NULL);
     s_pool = VK_NULL_HANDLE;
+}
+
+bool rhi_vr_read_eyes(RhiTexture src, uint64_t after, uint8_t *left, uint8_t *right)
+{
+    VkrTexture *s = vkr_get_texture(src);
+    if (!s || !left || !right || s->layers < 2u || !vrCommandsReady()) {
+        return false;
+    }
+    const VkDeviceSize layerBytes = (VkDeviceSize)s->width * s->height * 4u;
+    const VkBufferCreateInfo bci = {.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+                                    .size = layerBytes * 2u,
+                                    .usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT,
+                                    .sharingMode = VK_SHARING_MODE_EXCLUSIVE};
+    VkBuffer buf = VK_NULL_HANDLE;
+    if (vkCreateBuffer(g_vkr.device, &bci, NULL, &buf) != VK_SUCCESS) {
+        return false;
+    }
+    VkMemoryRequirements req;
+    vkGetBufferMemoryRequirements(g_vkr.device, buf, &req);
+    VkPhysicalDeviceMemoryProperties mp;
+    vkGetPhysicalDeviceMemoryProperties(g_vkr.phys, &mp);
+    uint32_t type = UINT32_MAX;
+    const VkMemoryPropertyFlags want =
+        VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+    for (uint32_t i = 0; i < mp.memoryTypeCount; i++) {
+        if ((req.memoryTypeBits & (1u << i)) && (mp.memoryTypes[i].propertyFlags & want) == want) {
+            type = i;
+            break;
+        }
+    }
+    VkDeviceMemory mem = VK_NULL_HANDLE;
+    const VkMemoryAllocateInfo mai = {.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+                                      .allocationSize = req.size,
+                                      .memoryTypeIndex = type};
+    if (type == UINT32_MAX || vkAllocateMemory(g_vkr.device, &mai, NULL, &mem) != VK_SUCCESS) {
+        vkDestroyBuffer(g_vkr.device, buf, NULL);
+        return false;
+    }
+    vkBindBufferMemory(g_vkr.device, buf, mem, 0);
+    const uint32_t i = s_next;
+    s_next = (s_next + 1u) % VR_CMDS;
+    vkWaitForFences(g_vkr.device, 1, &s_fences[i], VK_TRUE, UINT64_MAX);
+    vkResetFences(g_vkr.device, 1, &s_fences[i]);
+    vkResetCommandBuffer(s_cmds[i], 0);
+    const VkCommandBufferBeginInfo bi = {.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                                         .flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT};
+    VkCommandBuffer cb = s_cmds[i];
+    vkBeginCommandBuffer(cb, &bi);
+    VkBufferImageCopy r[2];
+    for (uint32_t l = 0; l < 2; l++) {
+        r[l] = (VkBufferImageCopy){.bufferOffset = layerBytes * l,
+                                   .imageSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, l, 1},
+                                   .imageExtent = {s->width, s->height, 1}};
+    }
+    vkCmdCopyImageToBuffer(cb, s->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, buf, 2, r);
+    vkEndCommandBuffer(cb);
+    const bool timeline = g_vkr.syncKind == VKR_SYNC_TIMELINE && after != 0;
+    const VkTimelineSemaphoreSubmitInfo ti = {
+        .sType = VK_STRUCTURE_TYPE_TIMELINE_SEMAPHORE_SUBMIT_INFO,
+        .waitSemaphoreValueCount = 1,
+        .pWaitSemaphoreValues = &after,
+    };
+    const VkPipelineStageFlags stage = VK_PIPELINE_STAGE_TRANSFER_BIT;
+    const VkSubmitInfo si = {
+        .sType = VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        .pNext = timeline ? &ti : NULL,
+        .waitSemaphoreCount = timeline ? 1u : 0u,
+        .pWaitSemaphores = timeline ? &g_vkr.timeline : NULL,
+        .pWaitDstStageMask = timeline ? &stage : NULL,
+        .commandBufferCount = 1,
+        .pCommandBuffers = &cb,
+    };
+    bool ok = vkQueueSubmit(g_vkr.vrQueue, 1, &si, s_fences[i]) == VK_SUCCESS &&
+              vkWaitForFences(g_vkr.device, 1, &s_fences[i], VK_TRUE, 2000000000ull) == VK_SUCCESS;
+    void *p = NULL;
+    if (ok && vkMapMemory(g_vkr.device, mem, 0, layerBytes * 2u, 0, &p) == VK_SUCCESS) {
+        memcpy(left, p, (size_t)layerBytes);
+        memcpy(right, (const uint8_t *)p + layerBytes, (size_t)layerBytes);
+        vkUnmapMemory(g_vkr.device, mem);
+    } else {
+        ok = false;
+    }
+    vkDestroyBuffer(g_vkr.device, buf, NULL);
+    vkFreeMemory(g_vkr.device, mem, NULL);
+    return ok;
 }

@@ -318,7 +318,13 @@ bool ico_vr_early_init(void)
     ico_video_vr_frame(1); /* the 4:3 native frame (rd_vr.h) */
     /* the screen-prim planes are the camera's screen's (rd_screen_planes.c):
        the eyes interpolate the corners instead */
-    SDL_setenv_unsafe("ICO_RD_NO_SPRITE_PLANES", "1", 1);
+    _putenv_s("ICO_RD_NO_SPRITE_PLANES", "1");
+    /* the VU vertex pre-pass evaluates each vertex once into records the
+       draws read: the eyes need each view's (vu_common.hlsli vu_divide) */
+    _putenv_s("ICO_RD_VU_PREPASS", "0");
+    /* the renderer's frustum and occlusion skips are the camera's picture's:
+       the eyes see around it */
+    _putenv_s("ICO_RD_CULL", "off");
     return true;
 }
 
@@ -564,6 +570,49 @@ static bool showPicture(RhiTexture tex, uint64_t timeline)
     return ok;
 }
 
+/* Development: ICO_VR_DUMP_DIR=<dir>; a file named "dump" there (its
+   content the count, 1 if empty) writes the next pictures' eyes as
+   eye_<id>_L.png and eye_<id>_R.png beside it, one at a time */
+static void dumpEyes(RhiTexture tex, uint64_t timeline, uint64_t id)
+{
+    static const char *dir;
+    static int checked, left;
+    if (!checked) {
+        checked = 1;
+        dir = getenv("ICO_VR_DUMP_DIR");
+    }
+    if (!dir) {
+        return;
+    }
+    char path[1024];
+    if (left <= 0) {
+        snprintf(path, sizeof(path), "%s\\dump", dir);
+        FILE *f = fopen(path, "rb");
+        if (!f) {
+            return;
+        }
+        int n = 0;
+        if (fscanf(f, "%d", &n) != 1 || n <= 0) {
+            n = 1;
+        }
+        fclose(f);
+        remove(path);
+        left = n;
+    }
+    const size_t bytes = (size_t)g.eyeW * g.eyeH * 4u;
+    uint8_t *l = malloc(bytes), *r = malloc(bytes);
+    if (l && r && rhi_vr_read_eyes(tex, timeline, l, r)) {
+        snprintf(path, sizeof(path), "%s\\eye_%06llu_L.png", dir, (unsigned long long)id);
+        rd_vr_write_png(path, l, g.eyeW, g.eyeH);
+        snprintf(path, sizeof(path), "%s\\eye_%06llu_R.png", dir, (unsigned long long)id);
+        rd_vr_write_png(path, r, g.eyeW, g.eyeH);
+        VR_LOG("dumped the eyes of picture %llu", (unsigned long long)id);
+    }
+    free(l);
+    free(r);
+    left--;
+}
+
 static void report(double period)
 {
     if (g.nIntervals < 2) {
@@ -669,6 +718,7 @@ static int frameLoop(void *arg)
             g.shownViews[1] = g.raw[id % 8].v[1];
             g.haveShown = true;
             g.newPictures++;
+            dumpEyes(tex, timeline, id);
         }
         XrCompositionLayerProjectionView pv[2];
         XrCompositionLayerProjection layer = {XR_TYPE_COMPOSITION_LAYER_PROJECTION};

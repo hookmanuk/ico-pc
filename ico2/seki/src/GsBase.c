@@ -3115,6 +3115,17 @@ int gsb_ClipBox(float *p)
     float *q = p;
     int i;
 
+#ifdef ICO_RD
+    /* VR fork: the head looks anywhere, so no box is culled against the
+       game camera's frustum, and every one is drawn by the programs that
+       clip (2: as a box across the near plane), whatever the eyes see of it
+       (port/render/rd_vr.h) */
+    if (rd_vr_wide_cull()) {
+        gsbCullLastViews = 1;
+        gsbCullLastWhy = GSB_CULL_ONE_NOT;
+        return 2;
+    }
+#endif
     /* PC port: while pictures are blended, the cameras they are drawn
        with (above); none when the step is past half the limits
        (gsbHostCullViews 0: every box kept) */

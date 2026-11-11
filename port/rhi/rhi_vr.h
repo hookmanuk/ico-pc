@@ -62,6 +62,11 @@ bool rhi_vr_copy_eyes(RhiTexture src, uint64_t dstImage, uint32_t dstFormat, uin
  * reach value; true when it did. */
 bool rhi_vr_wait_value(uint64_t value, uint64_t timeoutNs);
 
+/* Development (the headset thread's eye dump): both layers of src (RGBA8 in
+ * RHI_STATE_COPY_SRC) read into left and right (width x height x 4 bytes
+ * each) once the timeline reaches `after`; waits for the copy. */
+bool rhi_vr_read_eyes(RhiTexture src, uint64_t after, uint8_t *left, uint8_t *right);
+
 /* The VkFormat of an RHI format (the runtime's swapchain format choice). */
 uint32_t rhi_vr_vk_format(RhiFormat f);
 

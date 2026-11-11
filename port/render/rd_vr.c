@@ -4,6 +4,7 @@
 #include "ico_thread.h"
 #include "../rhi/rhi_vr.h"
 #include <math.h>
+#include <stdlib.h>
 #include <string.h>
 
 static struct {
@@ -62,6 +63,11 @@ void rd_vr_configure(bool on, uint32_t eyeW, uint32_t eyeH, float unitsPerMetre)
 bool rd_vr_active(void)
 {
     return s_vr.on;
+}
+
+int rd_vr_wide_cull(void)
+{
+    return s_vr.on ? 1 : 0;
 }
 
 void rd_vr_eye_size(uint32_t *w, uint32_t *h)
@@ -236,6 +242,16 @@ void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world)
         toFloat(id, cb->vrHud[v]);
     }
     cb->vrMode[0] = cb->vrMode[1] = cb->vrMode[2] = cb->vrMode[3] = 0.0f;
+    {
+        /* development: ICO_VR_TEST_TINT=1 tints the right eye in the
+           present's blit (blit.hlsl), a check of the view index */
+        static int s_tint = -1;
+        if (s_tint < 0) {
+            const char *e = getenv("ICO_VR_TEST_TINT");
+            s_tint = e && e[0] == '1';
+        }
+        cb->vrMode[3] = s_tint ? 1.0f : 0.0f;
+    }
     const RdVrFrame *f = &s_vr.cur;
     if (!s_vr.on || !world || !cam || !f->valid) {
         return;
@@ -267,6 +283,18 @@ void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world)
     for (int v = 0; v < 2; v++) {
         double E[16], Se[16], D[16];
         eyeFromCamera(f->eye[v], (double)s_vr.unitsPerMetre, E);
+        {
+            /* development: ICO_VR_TEST_EYE1=<units> moves eye 1 that far
+               right (a check that the eyes differ) */
+            static double s_test = -1.0;
+            if (s_test < 0.0) {
+                const char *e = getenv("ICO_VR_TEST_EYE1");
+                s_test = e ? atof(e) : 0.0;
+            }
+            if (v == 1 && s_test > 0.0) {
+                E[12] -= s_test;
+            }
+        }
         eyeScreen(f->tan[v], S, Se);
         mul4(Se, E, D);
         mul4(D, Si, D);
@@ -357,4 +385,9 @@ void rd__vr_shutdown(void)
             s_vr.ring[i] = (RhiTexture){0};
         }
     }
+}
+
+bool rd_vr_write_png(const char *path, const uint8_t *rgba, uint32_t w, uint32_t h)
+{
+    return rd_write_png(path, rgba, w, h, w * 4u, 0);
 }

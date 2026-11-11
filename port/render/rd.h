@@ -1165,6 +1165,9 @@ void rd_free_camera(void);
  * are made), the clip projection (+0x1C0, column-major) the VU programs'
  * clip rows are made from, for the eyes' clip spaces */
 void rd_vr_set_clip_projection(const float proj[16]);
+/* VR fork: 1 while the eyes draw (rd_vr.h rd_vr_active): the game's cull
+ * (GsBase.c gsb_ClipBox) keeps every box, as the head looks anywhere */
+int rd_vr_wide_cull(void);
 /* PC port: the game's box cull dropped a model's whole
  * object (rule 2, RegistPacket.c's object box) or one of its parts (rule 3,
  * the part's box) in the frame being recorded; views is how many cameras
