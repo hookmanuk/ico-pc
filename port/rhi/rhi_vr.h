@@ -76,6 +76,12 @@ bool rhi_vr_read_eyes(RhiTexture src, uint64_t after, uint8_t *left, uint8_t *ri
  * COLOR_ATTACHMENT_OPTIMAL, RGBA8, one layer) read into out (w x h x 4). */
 bool rhi_vr_read_image(uint64_t image, uint32_t w, uint32_t h, uint8_t *out);
 
+/* The desktop's mirror: the left eye (layer 0 of src, a stereo texture in
+ * RHI_STATE_COPY_SRC) blitted into the window's acquired image dst, its
+ * middle cut to the window's shape, dst left ready to present.  Recorded
+ * into cl outside a pass. */
+void rhi_vr_mirror_blit(RhiCommandList cl, RhiTexture src, RhiTexture dst);
+
 /* The VkFormat of an RHI format (the runtime's swapchain format choice). */
 uint32_t rhi_vr_vk_format(RhiFormat f);
 

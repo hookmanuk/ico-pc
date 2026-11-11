@@ -3938,6 +3938,12 @@ int ico_window_pump(void)
                     ico_input_escape(1, &c);
                     ico_input_escape(0, NULL);
                 }
+#ifdef _WIN32
+            } else if (e.key.key == SDLK_F8 && ico_vr_enabled()) {
+                if (!e.key.repeat) {
+                    ico_vr_recenter(); /* VR fork: the seat at the head (vr_openxr.h) */
+                }
+#endif
             } else if (e.key.key == SDLK_F11 || e.key.key == SDLK_F12) {
                 /* a held key's repeats: nothing */
             } else if (escape_key(e.key.key)) {

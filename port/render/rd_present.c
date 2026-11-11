@@ -94,6 +94,7 @@
 #include <string.h>
 #include "rd_internal.h"
 #include "rd_vr.h"
+#include "rhi_vr.h"
 #include "rd_submit.h"
 #include "rd_fsr1.h"
 #include "rd_upscale_temporal.h"
@@ -625,6 +626,7 @@ static RhiFormat s_outFormat;
 static uint32_t s_outW, s_outH;
 
 static bool s_window;
+static bool s_vrMirror; /* VR fork: the window's image acquired for the desktop's mirror */
 
 /* the swapchain's turn (rd_prerotate.c; rhi_swapchain_rotation): with a
  * window and s_turns, the present draws into s_pic (the window's size and
@@ -660,6 +662,9 @@ static void outFinish(RhiCommandList cl)
         /* VR fork: the eyes ready for the headset's copy (rd_vr.h) */
         rd__transition(cl, g_rd.presentOut, &g_rd.presentOutState, RHI_STATE_COPY_SRC);
         rd__vr_recorded(g_rd.presentOut, g_rd.presentOutState);
+        if (s_vrMirror) {
+            rhi_vr_mirror_blit(cl, g_rd.presentOut, s_backbuffer);
+        }
         return;
     }
     if (s_window) {
@@ -688,6 +693,13 @@ static bool vrAcquire(void)
 {
     s_backbuffer = (RhiTexture){0};
     s_window = false;
+    /* the desktop's mirror: the window's image, the left eye blitted into it
+       (outFinish); none without a window or with none free */
+    s_vrMirror = false;
+    if (rhi_swapchain_format() != RHI_FMT_UNKNOWN) {
+        s_backbuffer = rhi_acquire_backbuffer();
+        s_vrMirror = s_backbuffer.id != 0;
+    }
     s_turns = 0;
     s_turnFailed = false;
     uint32_t w = 0, h = 0;
@@ -2654,7 +2666,7 @@ void rd__present_record(RhiCommandList cl)
 
 void rd__present_finish(void)
 {
-    if (s_window && s_backbuffer.id) {
+    if ((s_window || s_vrMirror) && s_backbuffer.id) {
         rhi_present();
     }
     if (rd_vr_active()) {
@@ -2664,7 +2676,7 @@ void rd__present_finish(void)
 
 bool rd__present_will_show(void)
 {
-    return s_window && s_backbuffer.id;
+    return (s_window || s_vrMirror) && s_backbuffer.id;
 }
 
 void rd__present_shutdown(void)

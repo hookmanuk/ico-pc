@@ -470,3 +470,43 @@ bool rhi_vr_read_image(uint64_t image, uint32_t w, uint32_t h, uint8_t *out)
     vkFreeMemory(g_vkr.device, mem, NULL);
     return ok;
 }
+
+/* The desktop's mirror (rhi_vr.h): layer 0 of src (RHI_STATE_COPY_SRC) into the
+   window's acquired image dst, the eye's middle cut to the window's shape, the
+   image left ready for the present */
+void rhi_vr_mirror_blit(RhiCommandList cl, RhiTexture src, RhiTexture dst)
+{
+    VkrCmdList *c = vkr_get_cmd(cl);
+    VkrTexture *s = vkr_get_texture(src);
+    VkrTexture *d = vkr_get_texture(dst);
+    if (!c || !s || !d || c->inPass || !d->width || !d->height) {
+        return;
+    }
+    imageBarrierLayers(c->cb, d->image, 1, VK_IMAGE_LAYOUT_UNDEFINED,
+                       VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
+                       VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);
+    /* the source window of the destination's shape about the eye's middle */
+    const double da = (double)d->width / (double)d->height;
+    const double sa = (double)s->width / (double)s->height;
+    int32_t sx0 = 0, sy0 = 0, sx1 = (int32_t)s->width, sy1 = (int32_t)s->height;
+    if (da > sa) {
+        const int32_t h = (int32_t)((double)s->width / da);
+        sy0 = ((int32_t)s->height - h) / 2;
+        sy1 = sy0 + h;
+    } else {
+        const int32_t w = (int32_t)((double)s->height * da);
+        sx0 = ((int32_t)s->width - w) / 2;
+        sx1 = sx0 + w;
+    }
+    const VkImageBlit blit = {
+        .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+        .srcOffsets = {{sx0, sy0, 0}, {sx1, sy1, 1}},
+        .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+        .dstOffsets = {{0, 0, 0}, {(int32_t)d->width, (int32_t)d->height, 1}},
+    };
+    vkCmdBlitImage(c->cb, s->image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL, d->image,
+                   VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &blit, VK_FILTER_LINEAR);
+    imageBarrierLayers(c->cb, d->image, 1, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                       VK_IMAGE_LAYOUT_PRESENT_SRC_KHR, VK_ACCESS_TRANSFER_WRITE_BIT, 0,
+                       VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT);
+}
