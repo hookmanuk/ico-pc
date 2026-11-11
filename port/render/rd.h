@@ -1160,6 +1160,11 @@ void rd_camera_cut_wall(void);
  * artists placed: RdCamera.freeCamera.  Outside an open frame it applies to
  * the next one. */
 void rd_free_camera(void);
+
+/* VR fork (rd_vr.h): the game thread (GsBase.c, where the camera's matrices
+ * are made), the clip projection (+0x1C0, column-major) the VU programs'
+ * clip rows are made from, for the eyes' clip spaces */
+void rd_vr_set_clip_projection(const float proj[16]);
 /* PC port: the game's box cull dropped a model's whole
  * object (rule 2, RegistPacket.c's object box) or one of its parts (rule 3,
  * the part's box) in the frame being recorded; views is how many cameras

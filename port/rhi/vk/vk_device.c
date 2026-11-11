@@ -623,7 +623,7 @@ static bool vkr_props2(VkPhysicalDevice pd, VkPhysicalDeviceProperties2 *p2)
 
 static bool vkr_create_instance(const RhiDeviceDesc *desc)
 {
-    const char *exts[16];
+    const char *exts[32];
     uint32_t extCount = 0;
     VkInstanceCreateFlags flags = 0;
     const char *layers[1];
@@ -809,6 +809,7 @@ static bool vkr_create_instance(const RhiDeviceDesc *desc)
         .engineVersion = 1,
         .apiVersion = instanceApi,
     };
+    vkr_vr_instance_extensions(exts, &extCount, 32); /* VR fork: the runtime's (vk_vr.c) */
     VkInstanceCreateInfo ci = {
         .sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
         .flags = flags,
@@ -2715,12 +2716,51 @@ static bool vkr_create_device(void)
         f2.pNext = &subset;
     }
 #endif
-    float prio = 1.0f;
+    /* VR fork (vk_vr.c): multiview for the stereo mode, the runtime's
+     * device extensions, and a second queue of the family for the
+     * headset's thread */
+    VkPhysicalDeviceMultiviewFeatures qMultiview = {
+        .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES,
+        .multiview = VK_TRUE,
+    };
+    g_vkr.stereo = false;
+    if (vkr_vr_stereo_asked()) {
+        VkPhysicalDeviceMultiviewFeatures have = {
+            .sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_MULTIVIEW_FEATURES,
+        };
+        VkPhysicalDeviceFeatures2 q2 = {.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2,
+                                        .pNext = &have};
+        vkr_features2(g_vkr.phys, &q2);
+        if (have.multiview && !g_vkr.legacyPasses) {
+            qMultiview.pNext = f2.pNext;
+            f2.pNext = &qMultiview;
+            g_vkr.stereo = true;
+            VKR_LOG("VR: stereo mode: multiview on (every texture two layers)");
+        } else {
+            VKR_LOG("VR: stereo mode refused: %s",
+                    have.multiview ? "no dynamic rendering" : "no multiview");
+        }
+    }
+    vkr_vr_device_extensions(exts, &extCount, 48);
+    float prio[2] = {1.0f, 1.0f};
+    uint32_t queueCount = 1;
+    g_vkr.vrQueue = VK_NULL_HANDLE;
+    g_vkr.vrQueueIndex = 0;
+    if (vkr_vr_stereo_asked()) {
+        uint32_t nf = 0;
+        vkGetPhysicalDeviceQueueFamilyProperties(g_vkr.phys, &nf, NULL);
+        VkQueueFamilyProperties qf[16];
+        nf = nf < 16u ? nf : 16u;
+        vkGetPhysicalDeviceQueueFamilyProperties(g_vkr.phys, &nf, qf);
+        if (g_vkr.queueFamily < nf && qf[g_vkr.queueFamily].queueCount >= 2u) {
+            queueCount = 2;
+        }
+    }
     VkDeviceQueueCreateInfo qci = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_QUEUE_CREATE_INFO,
         .queueFamilyIndex = g_vkr.queueFamily,
-        .queueCount = 1,
-        .pQueuePriorities = &prio,
+        .queueCount = queueCount,
+        .pQueuePriorities = prio,
     };
     VkDeviceCreateInfo ci = {
         .sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO,
@@ -2748,6 +2788,10 @@ static bool vkr_create_device(void)
     }
 #endif
     vkGetDeviceQueue(g_vkr.device, g_vkr.queueFamily, 0, &g_vkr.queue);
+    if (queueCount == 2u) {
+        g_vkr.vrQueueIndex = 1;
+        vkGetDeviceQueue(g_vkr.device, g_vkr.queueFamily, 1, &g_vkr.vrQueue);
+    }
     vkr_probe_compute(avail);
     vkr_compute_stores();
     if (g_vkr.presentWait) {
@@ -3161,6 +3205,25 @@ static void vkr_fill_limits(void)
                       "time)"
                 : off ? "one call at a time (ICO_VK_SLOT_OVERLAP=0)"
                       : "one call at a time (the fence sync: no timeline semaphore)");
+    }
+    /* VR fork (rhi_vr.h): the stereo mode draws through multiview, whose
+     * shaders sample every texture as a two-layer array by the view index:
+     * no path that writes or reads images outside a pass (the destination
+     * read's storage images, the interlock and ROV, the VU record's stores),
+     * no multisampled targets (their shaders read Texture2DMS) and no
+     * attachment local read */
+    if (g_vkr.stereo) {
+        o->fragmentInterlock = false;
+        o->rov = false;
+        o->rasterOrderAttachment = false;
+        o->vertexStores = false;
+        o->computeStores = false;
+        o->msaaCounts = 1u;
+        o->sampleRateShading = false;
+        o->localRead = false;
+        o->storePassTarget = false;
+        VKR_LOG("VR: stereo mode: destination reads, interlock, VU stores, MSAA and local read "
+                "off");
     }
 }
 

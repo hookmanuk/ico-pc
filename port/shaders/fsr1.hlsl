@@ -42,7 +42,7 @@ cbuffer FsrCB : ICO_REG(b1, 1)
     uint4 c_last; // x, y: the input's last column and row (RCAS's loads stay inside it)
 };
 
-Texture2D<float4> g_texture : ICO_REG(t1, 2);
+ICO_T2D(float4) g_texture : ICO_REG(t1, 2);
 SamplerState g_sampler : ICO_REG(s1, 2);
 
 // blit_vs's output (blit.hlsl BlitVSOut), uv unused
@@ -61,23 +61,23 @@ struct FsrIn {
 
 AF4 FsrEasuRF(AF2 p)
 {
-    return g_texture.GatherRed(g_sampler, p);
+    return g_texture.GatherRed(g_sampler, ICO_UV(p));
 }
 
 AF4 FsrEasuGF(AF2 p)
 {
-    return g_texture.GatherGreen(g_sampler, p);
+    return g_texture.GatherGreen(g_sampler, ICO_UV(p));
 }
 
 AF4 FsrEasuBF(AF2 p)
 {
-    return g_texture.GatherBlue(g_sampler, p);
+    return g_texture.GatherBlue(g_sampler, ICO_UV(p));
 }
 
 AF4 FsrRcasLoadF(ASU2 p)
 {
     const int2 q = clamp(int2(p), int2(0, 0), int2(c_last.xy));
-    return g_texture.Load(int3(q, 0));
+    return g_texture.Load(ICO_LD(q, 0));
 }
 
 void FsrRcasInputF(inout AF1 r, inout AF1 g, inout AF1 b)
@@ -94,7 +94,7 @@ float4 fsr1_easu_ps(FsrIn i) : SV_Target0
     // the alpha the plain box blit would have had: the input's, bilinear, at
     // the pixel's position (EASU filters colour alone)
     const float2 pp = float2(ip) * asfloat(c_con0.xy) + asfloat(c_con0.zw) + 0.5;
-    const float a = g_texture.SampleLevel(g_sampler, pp * asfloat(c_con1.xy), 0.0).a;
+    const float a = g_texture.SampleLevel(g_sampler, ICO_UV(pp * asfloat(c_con1.xy)), 0.0).a;
     return float4(c, a);
 }
 

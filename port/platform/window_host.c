@@ -95,6 +95,9 @@
 #include "share_report.h" /* an rc build's Share a bug report (settings.h) */
 #include "strings.h"
 #endif
+#ifdef _WIN32
+#include "vr_openxr.h" /* VR fork */
+#endif
 
 /* The window's first client size: 4:3, three times 320 x 240. */
 #define WINDOW_W 960
@@ -471,6 +474,31 @@ static void video_settings(RdSettings *rs, int w, int h)
     }
     rhi_prefer_mailbox(s_pres.mailbox != 0);
     window_fifo_set();
+#ifdef _WIN32
+    if (ico_vr_enabled()) {
+        /* VR fork (port/render/rd_vr.h): the eyes are the output and the
+           scene, the 4:3 frame whole in each, a picture each headset frame */
+        uint32_t ew = 0, eh = 0;
+        rd_vr_eye_size(&ew, &eh);
+        rs->outputWidth = ew;
+        rs->outputHeight = eh;
+        rs->sceneWidth = ew;
+        rs->sceneHeight = eh;
+        rs->sceneScale = 0.0f;
+        rs->aspect = 4.0f / 3.0f;
+        rs->fullHeightScene = 1;
+        rs->fullPixel = 1;
+        rs->borderMask = 0;
+        rs->antiAlias = 0;
+        rs->downsample = 0;
+        rs->upscale = RD_UPSCALE_OFF;
+        rd_crt_settings(rs, RD_CRT_OFF, 0.0f);
+        rs->interpolate = 1;
+        rs->vsync = 0;
+        rs->effectsDepth = 0;
+        s_autoRes.active = 0;
+    }
+#endif
 }
 
 /* The window is fullscreen now (SDL's flag, which follows the window
@@ -2276,6 +2304,13 @@ open_window:
     /* a long driver call takes the window's events and is held to the GPU
        hang limit (window_switch.h ico_window_switch_wait_hooks) */
     ico_window_switch_wait_hooks();
+#ifdef _WIN32
+    /* VR fork: the headset's runtime before the device (its Vulkan
+       extensions, the stereo mode, the eyes' size: vr_openxr.h) */
+    if (ico_vr_early_init()) {
+        video_settings(&rs, (int)rs.outputWidth, (int)rs.outputHeight);
+    }
+#endif
     bool up = rd_init(gsW, gsH, &rs, s_window);
 #ifdef __ANDROID__
     /* not after a bisect that lost the device: the player's driver did not
@@ -2362,6 +2397,11 @@ open_window:
     }
 #ifdef __ANDROID__
     ico_gpu_driver_android_device_up(customDriver); /* issue 123 */
+#endif
+#ifdef _WIN32
+    if (ico_vr_enabled() && !ico_vr_start()) {
+        fprintf(stderr, "window: VR: the headset's session did not start; the game runs flat\n");
+    }
 #endif
     /* Apply's switch back to the start's choice (window_switch.c) */
     ico_window_switch_started(backendExplicit, backend);
@@ -5877,6 +5917,9 @@ void ico_window_close(void)
     window_disp_clock_stop();
     rd_set_host_call(NULL);
     rd_set_replay_gate(NULL);
+#ifdef _WIN32
+    ico_vr_stop(); /* VR fork: the headset's thread before the device goes */
+#endif
     rd_shutdown();
     if (s_window != NULL) {
         SDL_DestroyWindow(s_window);

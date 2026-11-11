@@ -345,6 +345,9 @@ void ico_video_set_window(int w, int h);
 /* The presentation aspect (width / height) in force: the aspect option,
    whatever the preset, "auto" being the window's clamped to [4:3, ICO_ASPECT_MAX]. */
 float ico_video_aspect(void);
+/* VR fork (port/platform/vr_openxr.h): 1 holds the native frame at 4:3
+   whatever the aspect row says (the eyes' frame, port/render/rd_vr.h) */
+void ico_video_vr_frame(int on);
 /* The native frame (port/include/ico_frame.h) for the aspect in force and
    a frame height h: 512 wide at 4:3 exactly.  GsBase.c latches it at each
    flip (gsFrame, with ScreenHeight). */

@@ -106,6 +106,10 @@ typedef struct VkrTexture {
     uint64_t hzEpoch;
     uint32_t hzXferMips;
     uint8_t hzAttach; /* VKR_HZ_ATTACH_* */
+    /* VR fork: array layers, 2 under the stereo mode (g_vkr.stereo: every
+     * texture one layer an eye, its views 2D arrays), 1 otherwise and for
+     * swapchain images */
+    uint32_t layers;
 } VkrTexture;
 
 #define VKR_HZ_ATTACH_WRITE 1u
@@ -910,9 +914,21 @@ typedef struct VkrState {
      * listed on a 1.2 device in an ICO_FFX build (vkr_create_device), the
      * set whole (RhiComputeCaps.externalExts) */
     bool externalExts;
+    /* VR fork (rhi_vk_vr.h): the stereo mode, every texture two layers and
+     * every pass and pipeline multiview (view mask 0b11); the OpenXR
+     * runtime's extensions; the headset's own queue (index 1 of the family) */
+    bool stereo;
+    VkQueue vrQueue;
+    uint32_t vrQueueIndex;
 } VkrState;
 
 extern VkrState g_vkr;
+
+/* VR fork (vk_vr.c) */
+bool vkr_vr_stereo_asked(void);
+void vkr_vr_instance_extensions(const char **list, uint32_t *n, uint32_t max);
+void vkr_vr_device_extensions(const char **list, uint32_t *n, uint32_t max);
+void vkr_vr_shutdown(void);
 
 /* the Vulkan format of an RhiFormat; RHI_FMT_D32F_S8 resolves to the chosen
  * depth-stencil format */

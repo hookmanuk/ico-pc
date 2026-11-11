@@ -53,11 +53,11 @@ YuvVSOut yuv_vs(uint id : SV_VertexID)
     return o;
 }
 
-Texture2D<float4> g_texture : ICO_REG(t1, 2);
+ICO_T2D(float4) g_texture : ICO_REG(t1, 2);
 
 int plane_texel(int x, int y)
 {
-    return int(floor(g_texture.Load(int3(x, y, 0)).r * 255.0 + 0.5));
+    return int(floor(g_texture.Load(ICO_LDXY(x, y, 0)).r * 255.0 + 0.5));
 }
 
 // --- a field of an interlaced picture --------------------------------------
@@ -207,7 +207,7 @@ int3 field_rgb(int x, int y)
 {
     x = clamp(x, 0, int(g_tex.x) - 1);
     y = clamp(y, 0, int(g_tex.y) - 1);
-    return int3(floor(g_texture.Load(int3(x, y, 0)).rgb * 255.0 + 0.5));
+    return int3(floor(g_texture.Load(ICO_LDXY(x, y, 0)).rgb * 255.0 + 0.5));
 }
 
 // The sample yuv_ps blends: converted here from the planes, or by

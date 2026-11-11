@@ -41,6 +41,14 @@ VuSprite vu_particle(uint i)
     // :99-112 e = S * (size * k.x, size * k.x, 0, 1): the half extent
     precise float sz = (0.0 + a.w) * k.x;
     float4 e = vu_matm(20u, float4(sz, sz, 0.0, 1.0), 1.0);
+#ifdef ICO_VR
+    // VR fork: the centre to this eye's screen, the extent at the eye's
+    // scale (port/render/rd_vr.h)
+    if (g_vrMode.x != 0.0) {
+        h = mul(g_vrScreen[g_viewIndex], h);
+        e.xy = e.xy * g_vrMode.yz;
+    }
+#endif
     // :108 div; :116-121 corners h -/+ e on xy, xyz divided, w stays h.w
     float q = vu_rcp(h.w);
     // (Z apart: a vector lane nothing reads is left undefined by the

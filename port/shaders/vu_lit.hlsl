@@ -74,7 +74,7 @@ VuVtx vu_lit_vertex(uint v, uint mode, uint variant)
     bool scissor = mode == VU_CLIP_SCISSOR;
     o.h = vu_matm(16u, pos, scissor ? pos.w : 1.0);
     if (scissor) {
-        o.clipf = vu_clipw(vu_matm(20u, pos, pos.w));
+        o.clipf = vu_clipw(vu_eye_clip(vu_matm(20u, pos, pos.w)));
     }
     float q = vu_divide(o);
     if (!scissor) {

@@ -522,6 +522,7 @@ bool vkr_pass_begin(VkrCmdList *c, const VkrPassDesc *d)
         .sType = VK_STRUCTURE_TYPE_RENDERING_INFO,
         .renderArea = {{(int32_t)d->areaX, (int32_t)d->areaY}, {d->areaW, d->areaH}},
         .layerCount = 1,
+        .viewMask = g_vkr.stereo ? 3u : 0u, /* VR fork: both eyes (rhi_vr.h) */
         .colorAttachmentCount = d->colorCount,
         .pColorAttachments = d->colorCount ? color : NULL,
         .pDepthAttachment = d->hasDepth ? &depth : NULL,

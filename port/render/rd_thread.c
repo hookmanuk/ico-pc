@@ -6,6 +6,7 @@
 #include <string.h>
 #include "ico_thread.h"
 #include "rd_internal.h"
+#include "rd_vr.h"
 #include "rd_submit.h"
 #include "rd_submit_thread.h"
 
@@ -96,6 +97,7 @@ typedef struct PresentArgs {
     double raw;
     double gap[2]; /* rd__present_clock_take's */
     bool ok;
+    RdVrFrame vr; /* VR fork: the headset frame's views (rd_vr.h) */
 } PresentArgs;
 
 static PresentArgs s_picPresent;
@@ -958,6 +960,7 @@ static void presentJob(void *arg)
     t_raw = p->raw;
     t_gap[0] = p->gap[0];
     t_gap[1] = p->gap[1];
+    rd__vr_picture_begin(&p->vr); /* VR fork */
     p->ok = rd_present(p->alpha);
     t_rawSet = set;
     t_raw = raw;
@@ -1003,6 +1006,11 @@ static void presentDrain(bool fresh)
 bool rd_present_post(float alpha)
 {
     if (!s_on || t_onR) {
+        {
+            RdVrFrame vr; /* VR fork: this picture's views (rd_vr.h) */
+            rd__vr_hand_over(&vr);
+            rd__vr_picture_begin(&vr);
+        }
         return rd_present(alpha);
     }
     {
@@ -1017,6 +1025,11 @@ bool rd_present_post(float alpha)
     if (!rd_interpolation_active() || !g_rd.hasDevice || g_rd.videoShown || cur == NULL ||
         !cur->closed) {
         /* nothing to hand over: its answer here, the render thread idle */
+        {
+            RdVrFrame vr; /* VR fork: this picture's views (rd_vr.h) */
+            rd__vr_hand_over(&vr);
+            rd__vr_picture_begin(&vr);
+        }
         return rd_present(alpha);
     }
     const bool wait = pictureWaits();
@@ -1024,8 +1037,10 @@ bool rd_present_post(float alpha)
      * callbacks share port/ui's font state with the step's own text
      * (rd_present.c s_pre) */
     rd__overlay_hand_over();
-    s_picPresent = (PresentArgs){alpha, 0.0, {0.0, 0.0}, false};
+    memset(&s_picPresent, 0, sizeof(s_picPresent));
+    s_picPresent.alpha = alpha;
     s_picPresent.raw = rd__present_clock_take(s_picPresent.gap);
+    rd__vr_hand_over(&s_picPresent.vr); /* VR fork: the views go with the picture */
     s_picTramp = (Tramp){presentJob, &s_picPresent, !wait, NULL};
     if (!wait) {
         handOver();

@@ -46,14 +46,14 @@ BlitVSOut blit_vs(uint id : SV_VertexID)
     return o;
 }
 
-Texture2D<float4> g_texture : ICO_REG(t1, 2);
+ICO_T2D(float4) g_texture : ICO_REG(t1, 2);
 SamplerState g_sampler : ICO_REG(s1, 2);
 
 uint4 blit_color(float2 uv)
 {
     uint4 col = g_col;
     if ((g_mode.x & DF_TEXTURED) != 0u) {
-        uint4 t = uint4(floor(g_texture.Sample(g_sampler, uv) * 255.0 + 0.5));
+        uint4 t = uint4(floor(g_texture.Sample(g_sampler, ICO_UV(uv)) * 255.0 + 0.5));
         t = gs_texa_expand(t, g_mode.y & 0xFFu, g_mode.y >> 8);
         col = gs_texture_function(t, g_col, g_mode.x);
     }
@@ -83,7 +83,7 @@ float4 blit_tone_ps(BlitVSOut i) : SV_Target0
 // the API (ReShade) finds the scene's depth at the picture's pixels and far in
 // the bars. Depth grows with GS Z, near 1 and far 0 (gs_z_to_depth):
 // RESHADE_DEPTH_INPUT_IS_REVERSED=1.
-Texture2D<float> g_sceneDepth : ICO_REG(t2, 2);
+ICO_T2D(float) g_sceneDepth : ICO_REG(t2, 2);
 
 struct BlitDepthOut {
     VK_LOC(0) float4 c : SV_Target0;
@@ -95,10 +95,10 @@ BlitDepthOut blit_depth_ps(BlitVSOut i)
     BlitDepthOut o;
     o.c = float4(blit_color(i.uv)) * (1.0 / 255.0);
     uint w, h;
-    g_sceneDepth.GetDimensions(w, h);
+    ICO_DIMS(g_sceneDepth, w, h);
     int2 p = int2(floor(saturate(i.uv) * float2(w, h)));
     p = min(p, int2(int(w) - 1, int(h) - 1));
-    o.d = g_sceneDepth.Load(int3(p, 0));
+    o.d = g_sceneDepth.Load(ICO_LD(p, 0));
     return o;
 }
 
@@ -111,10 +111,10 @@ BlitDepthOut blit_depth_tone_ps(BlitVSOut i)
     o.c = float4(blit_color(i.uv)) * (1.0 / 255.0);
     o.c.rgb = saturate(tone_adjust(o.c.rgb, g_param));
     uint w, h;
-    g_sceneDepth.GetDimensions(w, h);
+    ICO_DIMS(g_sceneDepth, w, h);
     int2 p = int2(floor(saturate(i.uv) * float2(w, h)));
     p = min(p, int2(int(w) - 1, int(h) - 1));
-    o.d = g_sceneDepth.Load(int3(p, 0));
+    o.d = g_sceneDepth.Load(ICO_LD(p, 0));
     return o;
 }
 
@@ -147,7 +147,7 @@ float4 box_reduce_ps(BlitVSOut i) : SV_Target0
         float wy = min(hi.y, float(y + 1)) - max(lo.y, float(y));
         for (int x = first.x; x < last.x; x++) {
             float wx = min(hi.x, float(x + 1)) - max(lo.x, float(x));
-            sum += g_texture.Load(int3(x, y, 0)) * (wx * wy);
+            sum += g_texture.Load(ICO_LDXY(x, y, 0)) * (wx * wy);
         }
     }
     return sum / (g_param.x * g_param.y);
@@ -186,7 +186,7 @@ float4 aa_reduce_ps(BlitVSOut i) : SV_Target0
         uint4 row = uint4(0u, 0u, 0u, 0u);
         for (uint x = first.x; x < last.x; x++) {
             uint wx = min(hi.x, (x + 1u) * 16u) - max(lo.x, x * 16u);
-            row += uint4(floor(g_texture.Load(int3(int(x), int(y), 0)) * 255.0 + 0.5)) * wx;
+            row += uint4(floor(g_texture.Load(ICO_LDXY(int(x), int(y), 0)) * 255.0 + 0.5)) * wx;
         }
         sum += row * wy;
     }
@@ -300,11 +300,11 @@ MsaaResolveOut msaa_resolve_ps(BlitVSOut i)
     return o;
 }
 
-Texture2D<float> g_ssDepth : ICO_REG(t1, 2);
+ICO_T2D(float) g_ssDepth : ICO_REG(t1, 2);
 
 float depth_upsample_ps(BlitVSOut i) : SV_Depth
 {
-    return g_ssDepth.Load(int3(int2(i.pos.xy), 0));
+    return g_ssDepth.Load(ICO_LD(int2(i.pos.xy), 0));
 }
 
 // The crack filler above 1x (port/render/rd_crack_fill.c; docs/port/RENDER_POST.md,
@@ -344,13 +344,13 @@ float depth_upsample_ps(BlitVSOut i) : SV_Depth
 #define CRACK_REACH_MAX 3
 #define CRACK_BLOCK 16
 
-Texture2D<float> g_crackDepth : ICO_REG(t1, 2);
+ICO_T2D(float) g_crackDepth : ICO_REG(t1, 2);
 
 // texel q of the depth copy z, 0 (unwritten) outside it
-float crack_depth(Texture2D<float> z, int2 q, int2 size)
+float crack_depth(ICO_T2D(float) z, int2 q, int2 size)
 {
     int2 c = clamp(q, int2(0, 0), size - int2(1, 1));
-    float v = z.Load(int3(c, 0));
+    float v = z.Load(ICO_LD(c, 0));
     bool inside = q.x >= 0 && q.y >= 0 && q.x < size.x && q.y < size.y;
     return inside ? v : 0.0;
 }
@@ -364,7 +364,7 @@ bool crack_front(float dq, float dp, float share)
 
 // the distance (1..reach) to the first texel from p by step in front of
 // depth dp, 0 none; d its depth
-int crack_end(Texture2D<float> z, int2 p, int2 step, int reach, int2 size, float dp, float share,
+int crack_end(ICO_T2D(float) z, int2 p, int2 step, int reach, int2 size, float dp, float share,
               out float d)
 {
     int found = 0;
@@ -381,7 +381,7 @@ int crack_end(Texture2D<float> z, int2 p, int2 step, int reach, int2 size, float
 
 // a drawn texel of depth dp, the ends a texels before it (depth da) and b
 // after it (db) along step: behind both by a step in depth, not on a surface
-bool crack_behind(Texture2D<float> z, int2 p, int2 step, int a, int b, float da, float db,
+bool crack_behind(ICO_T2D(float) z, int2 p, int2 step, int a, int b, float da, float db,
                   float dp, int2 size, float share)
 {
     float drop = min(da, db) - dp;
@@ -402,7 +402,7 @@ bool crack_behind(Texture2D<float> z, int2 p, int2 step, int a, int b, float da,
 // reads nothing farther than crack_behind does. The four neighbours are read
 // first and a texel with no pair of them in front of it along an enabled axis
 // (every ordinary surface texel) is left at once.
-bool crack_at(Texture2D<float> z, int2 p, int2 size, int2 reach, float share, out int2 from)
+bool crack_at(ICO_T2D(float) z, int2 p, int2 size, int2 reach, float share, out int2 from)
 {
     from = p;
     float dp = crack_depth(z, p, size);
@@ -427,7 +427,7 @@ bool crack_at(Texture2D<float> z, int2 p, int2 size, int2 reach, float share, ou
 }
 #else
 // p a crack of the depth copy z: from the texel it takes
-bool crack_at(Texture2D<float> z, int2 p, int2 size, int2 reach, float share, out int2 from)
+bool crack_at(ICO_T2D(float) z, int2 p, int2 size, int2 reach, float share, out int2 from)
 {
     from = p;
     float dp = crack_depth(z, p, size);
@@ -454,19 +454,19 @@ bool crack_at(Texture2D<float> z, int2 p, int2 size, int2 reach, float share, ou
 float4 crack_fill_ps(BlitVSOut i) : SV_Target0
 {
     uint w, h;
-    g_sceneDepth.GetDimensions(w, h);
+    ICO_DIMS(g_sceneDepth, w, h);
     int2 p = int2(i.pos.xy);
     int2 from;
     if (!crack_at(g_sceneDepth, p, int2(int(w), int(h)), int2(g_param.xy), g_param.z, from)) {
         discard;
     }
-    return g_texture.Load(int3(from, 0));
+    return g_texture.Load(ICO_LD(from, 0));
 }
 
 float4 crack_count_ps(BlitVSOut i) : SV_Target0
 {
     uint w, h;
-    g_crackDepth.GetDimensions(w, h);
+    ICO_DIMS(g_crackDepth, w, h);
     int2 size = int2(int(w), int(h));
     int2 base = int2(i.pos.xy) * CRACK_BLOCK;
     uint n = 0u;
@@ -545,12 +545,12 @@ float4 camera_probe_ps(BlitVSOut i) : SV_Target0
 // shader merely holds the gather) and wherever the loads are in force
 // (rd_shadow_one.c). The stencil it reads is always single-sampled: SCENE's
 // own depth, the MSAA epoch resolved before the count (rd_replay.c msaaEnd).
-Texture2D<uint4> g_shadowStencil : ICO_REG(t1, 2);
-Texture2D<float4> g_shadowTable : ICO_REG(t2, 2);
+ICO_T2D(uint4) g_shadowStencil : ICO_REG(t1, 2);
+ICO_T2D(float4) g_shadowTable : ICO_REG(t2, 2);
 
 uint shadow_count_m(int x, int y)
 {
-    uint4 s = g_shadowStencil.Load(int3(x, y, 0));
+    uint4 s = g_shadowStencil.Load(ICO_LDXY(x, y, 0));
     return (g_mode.x != 0u ? s.y : s.x) & 0x3Fu;
 }
 
@@ -566,8 +566,8 @@ uint shadow_count_m(int x, int y)
 uint4 shadow_count_gather(int x, int y, float2 inv)
 {
     float2 uv = float2(float(x + 1), float(y + 1)) * inv;
-    uint4 s = g_mode.x != 0u ? g_shadowStencil.GatherGreen(g_sampler, uv)
-                             : g_shadowStencil.GatherRed(g_sampler, uv);
+    uint4 s = g_mode.x != 0u ? g_shadowStencil.GatherGreen(g_sampler, ICO_UV(uv))
+                             : g_shadowStencil.GatherRed(g_sampler, ICO_UV(uv));
     return s & 0x3Fu;
 }
 
@@ -592,7 +592,7 @@ float4 shadow_count_ps(BlitVSOut i) : SV_Target0
         // each row's texels left to right), each texel's m from a gather:
         // two rows' m gathered, then row y's terms added, then row y + 1's
         uint w, h;
-        g_shadowStencil.GetDimensions(w, h);
+        ICO_DIMS(g_shadowStencil, w, h);
         float2 inv = 1.0 / float2(float(w), float(h));
         for (int y = first.y; y < last.y; y += 2) {
             uint m0[SHADOW_GATHER_SPAN], m1[SHADOW_GATHER_SPAN];
@@ -615,7 +615,7 @@ float4 shadow_count_ps(BlitVSOut i) : SV_Target0
                         uint m = r == 0 ? m0[k] : m1[k];
                         if (x < last.x && m != 0u) {
                             if (m != held) {
-                                v = g_shadowTable.Load(int3(int(m), 0, 0));
+                                v = g_shadowTable.Load(ICO_LDXY(int(m), 0, 0));
                                 held = m;
                             }
                             float wx = min(hi.x, float(x + 1)) - max(lo.x, float(x));
@@ -634,7 +634,7 @@ float4 shadow_count_ps(BlitVSOut i) : SV_Target0
             uint m = shadow_count_m(x, y);
             if (m != 0u) {
                 if (m != held) {
-                    v = g_shadowTable.Load(int3(int(m), 0, 0));
+                    v = g_shadowTable.Load(ICO_LDXY(int(m), 0, 0));
                     held = m;
                 }
                 float wx = min(hi.x, float(x + 1)) - max(lo.x, float(x));

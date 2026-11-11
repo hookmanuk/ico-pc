@@ -55,6 +55,7 @@ typedef struct RdSubmitJob {
     uint32_t cl2;
     uint8_t slot;     /* its frame slot (rhi_frame_slot when it was recorded) */
     bool present;     /* its image is presented after the submit */
+    bool vrPresent;   /* VR fork: its eyes are published after the submit (rd_vr.h) */
     uint32_t replay;  /* its replay's perf record (RdPerfRecord.replay) */
     uint64_t seq;     /* rd__sq_post's number */
     double submitMs;  /* the end and the submit (rhi_end_commands, rhi_submit) */

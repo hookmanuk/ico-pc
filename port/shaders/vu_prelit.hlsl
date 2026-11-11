@@ -25,7 +25,7 @@ VuVtx vu_prelit_vertex(uint v, uint mode)
     float w = mode == VU_CLIP_SCISSOR ? pos.w : 1.0;
     o.h = vu_matm(16u, pos, w);
     if (mode == VU_CLIP_SCISSOR) {
-        o.clipf = vu_clipw(vu_matm(20u, pos, pos.w));
+        o.clipf = vu_clipw(vu_eye_clip(vu_matm(20u, pos, pos.w)));
     }
     float q = vu_divide(o);
     if (mode == VU_CLIP_REGION) {

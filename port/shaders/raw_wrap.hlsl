@@ -32,10 +32,10 @@ struct WrapAccIn
     VK_LOC(1) float2 uv : TEXCOORD0; // normalised
 };
 
-Texture2D<float4> g_texture : ICO_REG(t1, 2);
+ICO_T2D(float4) g_texture : ICO_REG(t1, 2);
 SamplerState g_sampler : ICO_REG(s1, 2);
 // wrap_resolve_ps: the destination as it was before the command
-Texture2D<float4> g_dest : ICO_REG(t2, 2);
+ICO_T2D(float4) g_dest : ICO_REG(t2, 2);
 
 float4 wrap_acc_ps(WrapAccIn i) : SV_Target0
 {
@@ -71,8 +71,8 @@ struct WrapResolveIn
 float4 wrap_resolve_ps(WrapResolveIn i) : SV_Target0
 {
     int3 p = int3(int2(i.pos.xy), 0);
-    float4 acc = g_texture.Load(p);
-    float4 dst = g_dest.Load(p);
+    float4 acc = g_texture.Load(ICO_LD3(p));
+    float4 dst = g_dest.Load(ICO_LD3(p));
     int3 d = int3(floor(dst.rgb * 255.0 + 0.5));
     int3 r = (d + int3(round(acc.rgb))) & 255;
     float a = acc.a > 0.5 ? acc.a - 1.0 : floor(dst.a * 255.0 + 0.5);

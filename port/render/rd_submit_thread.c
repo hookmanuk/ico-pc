@@ -6,6 +6,7 @@
 #include <string.h>
 #include "ico_thread.h"
 #include "rd_internal.h"
+#include "rd_vr.h"
 
 static struct {
     IcoThread *th;
@@ -88,6 +89,9 @@ static void tail(RdSubmitJob *j)
     }
     if (j->present) {
         rhi_present();
+    }
+    if (j->vrPresent) {
+        rd__vr_finished(); /* VR fork: the eyes to the headset (rd_vr.h) */
     }
     j->presentMs = rd__now_ms() - t1;
     rd__present_split_take(j, j->present);
@@ -458,6 +462,7 @@ bool rd__submit_defer(RhiCommandList cl, RhiCommandList cl2, bool present)
     t_job.cl2 = cl2.id;
     t_job.slot = (uint8_t)(rhi_frame_slot() % RHI_FRAMES_IN_FLIGHT);
     t_job.present = present && rd__present_will_show();
+    t_job.vrPresent = present && rd_vr_active();
     t_job.replay = g_rdPerf.replay;
     t_kept = true;
     return true;

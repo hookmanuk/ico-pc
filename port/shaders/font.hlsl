@@ -37,9 +37,9 @@ struct SpriteVSOut
     VK_LOC(1) float2 uv : TEXCOORD0; // normalised
 };
 
-Texture2D<float4> g_atlas : ICO_REG(t1, 2);
+ICO_T2D(float4) g_atlas : ICO_REG(t1, 2);
 SamplerState g_sampler : ICO_REG(s1, 2);
-Texture2D<float> g_dateSnap : ICO_REG(t2, 2);
+ICO_T2D(float) g_dateSnap : ICO_REG(t2, 2);
 
 GS_PS_ATTR GS_PS_OUT font_ps(SpriteVSOut i)
 {
@@ -50,7 +50,7 @@ GS_PS_ATTR GS_PS_OUT font_ps(SpriteVSOut i)
     }
     uint4 col = uint4(floor(i.col + 0.5));
     if ((g_mode.x & DF_TEXTURED) != 0u) {
-        uint a = (uint)floor(g_atlas.Sample(g_sampler, i.uv).r * 255.0 + 0.5);
+        uint a = (uint)floor(g_atlas.Sample(g_sampler, ICO_UV(i.uv)).r * 255.0 + 0.5);
         col = gs_texture_function(uint4(255u, 255u, 255u, a), col, g_mode.x);
     }
     if (gs_alpha_discard(g_mode.z, g_mode.w, col.a)) {
@@ -65,7 +65,7 @@ GS_PS_ATTR GS_PS_OUT font_ps(SpriteVSOut i)
 // outside the texture, whatever the sampler's address mode.
 uint4 sheet_cov4(int2 q, int2 size)
 {
-    const float4 v = g_atlas.GatherRed(g_sampler, (float2(q) + 1.0) / float2(size));
+    const float4 v = g_atlas.GatherRed(g_sampler, ICO_UV((float2(q) + 1.0) / float2(size)));
     // Gather's order: x (0, 1), y (1, 1), z (1, 0), w (0, 0)
     uint4 c = uint4(floor(float4(v.w, v.z, v.x, v.y) * 255.0 + 0.5));
     // 0 <= v < n as one unsigned comparison (n >= 0: a negative v wraps
@@ -114,7 +114,7 @@ void sheet_scaled(int2 p0, int2 size, uint4 style, uint dither, uint s, out floa
             const bool inside = ICO_AND((uint)t.x < (uint)size.x, (uint)t.y < (uint)hh);
             // the load's address clamped (it is made whether or not used)
             const int2 tc = clamp(t, int2(0, 0), int2(size.x - 1, hh - 1));
-            const float rv = g_atlas.Load(int3(tc.x, hh + tc.y, 0)).r;
+            const float rv = g_atlas.Load(ICO_LDXY(tc.x, hh + tc.y, 0)).r;
             const uint r = ICO_SELECT(inside, (uint)floor(rv * 255.0 + 0.5), 0u);
             const uint th = sheet_threshold(q, dither);
             const uint l = sheet_rim_level(r, style, th);
@@ -135,7 +135,7 @@ GS_PS_ATTR GS_PS_OUT font_sheet_ps(SpriteVSOut i)
     uint4 col = uint4(floor(i.col + 0.5));
     if ((g_mode.x & DF_TEXTURED) != 0u) {
         uint tw, th;
-        g_atlas.GetDimensions(tw, th);
+        ICO_DIMS(g_atlas, tw, th);
         const int2 size = int2((int)tw, (int)th);
         const uint4 style = uint4(g_param + 0.5);
         // param.w: the dither bit, the strip's scale above it
@@ -206,7 +206,7 @@ GS_PS_ATTR GS_PS_OUT font_sheet_ps(SpriteVSOut i)
 float2 sheet_baked_texel(int2 p, int2 dim)
 {
     const int2 q = clamp(p + int2(SHEET_BAKE_AX, SHEET_BAKE_AY), int2(0, 0), dim - 1);
-    const float4 t = g_atlas.Load(int3(q, 0));
+    const float4 t = g_atlas.Load(ICO_LD(q, 0));
     return float2(floor(t.x * 255.0 + 0.5), floor(t.w * 255.0 + 0.5));
 }
 
@@ -220,7 +220,7 @@ GS_PS_ATTR GS_PS_OUT font_sheet_baked_ps(SpriteVSOut i)
     uint4 col = uint4(floor(i.col + 0.5));
     if ((g_mode.x & DF_TEXTURED) != 0u) {
         uint tw, th;
-        g_atlas.GetDimensions(tw, th);
+        ICO_DIMS(g_atlas, tw, th);
         const int2 dim = int2((int)tw, (int)th);
         // the page's size, which the UVs are normalised by (font_sheet_ps's
         // size)

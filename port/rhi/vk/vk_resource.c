@@ -560,6 +560,20 @@ VkrTexture *vkr_get_texture(RhiTexture t)
     return vkr_pool_get(&g_vkr.textures, t.id);
 }
 
+/* VR fork: layers 2 (the stereo mode) makes a 2D array view of both */
+static bool vkr_create_view_layers(VkImage image, VkFormat fmt, VkImageAspectFlags aspect,
+                                   uint32_t mips, uint32_t layers, VkImageView *out)
+{
+    VkImageViewCreateInfo vi = {
+        .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+        .image = image,
+        .viewType = layers > 1u ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D,
+        .format = fmt,
+        .subresourceRange = {aspect, 0, mips, 0, layers},
+    };
+    return VKR_CHECK(vkCreateImageView(g_vkr.device, &vi, NULL, out));
+}
+
 static bool vkr_create_view(VkImage image, VkFormat fmt, VkImageAspectFlags aspect, uint32_t mips,
                             VkImageView *out)
 {
@@ -582,7 +596,7 @@ static bool vkr_create_view(VkImage image, VkFormat fmt, VkImageAspectFlags aspe
  * structure: the view keeps the image's usages, which RGBA8_UINT takes as
  * well (sampled, storage and copies are features Vulkan 1.0 requires of
  * it; the colour attachment vkr_rate_device checks) */
-static bool vkr_create_uint_view(VkImage image, uint32_t mips, VkImageView *out)
+static bool vkr_create_uint_view(VkImage image, uint32_t mips, uint32_t layers, VkImageView *out)
 {
     const VkImageViewUsageCreateInfo use = {
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_USAGE_CREATE_INFO,
@@ -592,9 +606,9 @@ static bool vkr_create_uint_view(VkImage image, uint32_t mips, VkImageView *out)
         .sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
         .pNext = g_vkr.viewUsage ? &use : NULL,
         .image = image,
-        .viewType = VK_IMAGE_VIEW_TYPE_2D,
+        .viewType = layers > 1u ? VK_IMAGE_VIEW_TYPE_2D_ARRAY : VK_IMAGE_VIEW_TYPE_2D,
         .format = VK_FORMAT_R8G8B8A8_UINT,
-        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mips, 0, 1},
+        .subresourceRange = {VK_IMAGE_ASPECT_COLOR_BIT, 0, mips, 0, layers},
     };
     return VKR_CHECK(vkCreateImageView(g_vkr.device, &vi, NULL, out));
 }
@@ -730,7 +744,7 @@ static RhiTexture createTexture(const RhiTextureDesc *desc)
         .format = vkFmt,
         .extent = {desc->width, desc->height, 1},
         .mipLevels = mips,
-        .arrayLayers = 1,
+        .arrayLayers = g_vkr.stereo ? 2u : 1u, /* VR fork: one layer an eye */
         .samples = (VkSampleCountFlagBits)samples,
         .tiling = VK_IMAGE_TILING_OPTIMAL,
         .usage = usage,
@@ -757,10 +771,11 @@ static RhiTexture createTexture(const RhiTextureDesc *desc)
     t->height = desc->height;
     t->mips = mips;
     t->samples = samples;
+    t->layers = g_vkr.stereo ? 2u : 1u;
     /* copy-only textures (staging, R8 copy targets) have no view: a view
      * needs a sampled or attachment usage */
     if ((desc->usage & (RHI_TEX_SAMPLED | RHI_TEX_RENDER_TARGET | RHI_TEX_DEPTH_STENCIL)) &&
-        !vkr_create_view(t->image, vkFmt, fm->aspect, mips, &t->view)) {
+        !vkr_create_view_layers(t->image, vkFmt, fm->aspect, mips, t->layers, &t->view)) {
         goto fail;
     }
     if ((fm->aspect & VK_IMAGE_ASPECT_STENCIL_BIT) &&
@@ -768,7 +783,8 @@ static RhiTexture createTexture(const RhiTextureDesc *desc)
         /* a depth-stencil view cannot be sampled, nor read as an input
          * attachment (one aspect a descriptor): sampling and the fog's
          * local read see depth only */
-        if (!vkr_create_view(t->image, vkFmt, VK_IMAGE_ASPECT_DEPTH_BIT, mips, &t->depthView)) {
+        if (!vkr_create_view_layers(t->image, vkFmt, VK_IMAGE_ASPECT_DEPTH_BIT, mips, t->layers,
+                                    &t->depthView)) {
             goto fail;
         }
     } else {
@@ -785,7 +801,8 @@ static RhiTexture createTexture(const RhiTextureDesc *desc)
     t->stencilView = VK_NULL_HANDLE;
     if ((fm->aspect & VK_IMAGE_ASPECT_STENCIL_BIT) && (desc->usage & RHI_TEX_SAMPLED) &&
         samples == 1u && g_vkr.limits.stencilView &&
-        !vkr_create_view(t->image, vkFmt, VK_IMAGE_ASPECT_STENCIL_BIT, mips, &t->stencilView)) {
+        !vkr_create_view_layers(t->image, vkFmt, VK_IMAGE_ASPECT_STENCIL_BIT, mips, t->layers,
+                                &t->stencilView)) {
         t->stencilView = VK_NULL_HANDLE;
         g_vkr.limits.stencilView = false;
         VKR_LOG("texture %s: the stencil view was not made: no stencil views on this device "
@@ -793,7 +810,7 @@ static RhiTexture createTexture(const RhiTextureDesc *desc)
                 desc->debugName ? desc->debugName : "?");
     }
     t->uintView = VK_NULL_HANDLE;
-    if (uintView && !vkr_create_uint_view(t->image, mips, &t->uintView)) {
+    if (uintView && !vkr_create_uint_view(t->image, mips, t->layers, &t->uintView)) {
         goto fail;
     }
     vkr_set_name(VK_OBJECT_TYPE_IMAGE, VKR_H(t->image), desc->debugName);
@@ -854,6 +871,7 @@ uint32_t vkr_register_swapchain_image(VkImage image, VkFormat fmt, RhiFormat rf,
     t->height = h;
     t->mips = 1;
     t->samples = 1;
+    t->layers = 1;
     t->swapchain = true;
     if (!vkr_create_view(image, fmt, VK_IMAGE_ASPECT_COLOR_BIT, 1, &t->view)) {
         vkr_pool_release(&g_vkr.textures, id);

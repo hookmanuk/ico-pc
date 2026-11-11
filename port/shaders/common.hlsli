@@ -268,6 +268,14 @@ cbuffer FrameCB : ICO_REG(b0, 0)
                      // pass's reads by pixel stay on their texels); 0 in
                      // every other frame group (x - 0 is x: the same
                      // pixels); zw reserved
+    // VR fork (port/render/rd_vr.h; shader_consts.h IcoFrameCB.vr*): per
+    // view the camera's GS screen to the eye's, the VU clip space to the
+    // eye's, the flat screen's place; g_vrMode.x 1 in a pass of the frame
+    // camera's world
+    column_major float4x4 g_vrScreen[2];
+    column_major float4x4 g_vrClip[2];
+    column_major float4x4 g_vrHud[2];
+    float4 g_vrMode;
 };
 
 // ---------------------------------------------------------------- DrawCB
@@ -305,6 +313,7 @@ cbuffer DrawCB : ICO_REG(b1, 1)
     // in blit_vs the present's quarter turns (blit.hlsl), else 0
     uint4 g_aux0;
     uint4 g_aux1;
+    uint4 g_vr; // VR fork: x 1 on a screen prim the frame camera projected
 };
 
 #define DF_TEXTURED 1u    // PRIM.TME
@@ -474,7 +483,7 @@ uint gs_resample_div(GsAxis a)
 // taps of smp (which must address as the draw does). tc is the GS's sample
 // point in texels of tex (the 12.4 coordinate / 16, the texel centre at
 // i + 0.5); the fraction is the GS's 4-bit one, as gs_bspline_w takes it.
-float4 gs_bspline_bilinear4(Texture2D<float4> tex, SamplerState smp, float2 tc, float2 size)
+float4 gs_bspline_bilinear4(ICO_T2D(float4) tex, SamplerState smp, float2 tc, float2 size)
 {
     const int2 c16 = int2(floor(tc * 16.0 + 0.5));
     const int2 i0 = (c16 - 8) >> 4;
@@ -490,10 +499,10 @@ float4 gs_bspline_bilinear4(Texture2D<float4> tex, SamplerState smp, float2 tc, 
         h1[k] = float(i0[k]) + 1.0 + w3 / max(w2 + w3, 1.0) + 0.5;
     }
     const float2 inv = 1.0 / size;
-    return g0.y * (g0.x * tex.SampleLevel(smp, float2(h0.x, h0.y) * inv, 0.0) +
-                   g1.x * tex.SampleLevel(smp, float2(h1.x, h0.y) * inv, 0.0)) +
-           g1.y * (g0.x * tex.SampleLevel(smp, float2(h0.x, h1.y) * inv, 0.0) +
-                   g1.x * tex.SampleLevel(smp, float2(h1.x, h1.y) * inv, 0.0));
+    return g0.y * (g0.x * tex.SampleLevel(smp, ICO_UV(float2(h0.x, h0.y) * inv), 0.0) +
+                   g1.x * tex.SampleLevel(smp, ICO_UV(float2(h1.x, h0.y) * inv), 0.0)) +
+           g1.y * (g0.x * tex.SampleLevel(smp, ICO_UV(float2(h0.x, h1.y) * inv), 0.0) +
+                   g1.x * tex.SampleLevel(smp, ICO_UV(float2(h1.x, h1.y) * inv), 0.0));
 }
 
 // TEXA before filtering (sprite_texa_ps, vu_texa_ps): the texel of a
@@ -521,34 +530,34 @@ int2 gs_nearest_texel(float2 tc)
     return int2(floor(tc * 16.0 + 0.5)) >> 4;
 }
 
-uint4 gs_texa_load(Texture2D<float4> tex, int2 c, int2 size, uint flags)
+uint4 gs_texa_load(ICO_T2D(float4) tex, int2 c, int2 size, uint flags)
 {
     c.x = (flags & DF_TEXA_CLAMP_S) != 0u ? clamp(c.x, 0, size.x - 1) : gs_wrap_repeat(c.x, size.x);
     c.y = (flags & DF_TEXA_CLAMP_T) != 0u ? clamp(c.y, 0, size.y - 1) : gs_wrap_repeat(c.y, size.y);
-    uint4 t = uint4(floor(tex.Load(int3(c, 0)) * 255.0 + 0.5));
+    uint4 t = uint4(floor(tex.Load(ICO_LD(c, 0)) * 255.0 + 0.5));
     return gs_texa_expand(t, g_mode.y & 0xFFu, g_mode.y >> 8);
 }
 
 // The texel c of t1's mip level lv, 0..255, wrapped by DF_TEXA_CLAMP_S/T
 // (REPEAT or CLAMP at the level's size), before TEXA.
-uint4 gs_load_lv(Texture2D<float4> tex, int2 c, int2 size, uint lv, uint flags)
+uint4 gs_load_lv(ICO_T2D(float4) tex, int2 c, int2 size, uint lv, uint flags)
 {
     c.x = (flags & DF_TEXA_CLAMP_S) != 0u ? clamp(c.x, 0, size.x - 1) : gs_wrap_repeat(c.x, size.x);
     c.y = (flags & DF_TEXA_CLAMP_T) != 0u ? clamp(c.y, 0, size.y - 1) : gs_wrap_repeat(c.y, size.y);
-    return uint4(floor(tex.Load(int3(c, int(lv))) * 255.0 + 0.5));
+    return uint4(floor(tex.Load(ICO_LD(c, int(lv))) * 255.0 + 0.5));
 }
 
-uint4 gs_texa_texture(Texture2D<float4> tex, SamplerState smp, float2 uvn, uint flags)
+uint4 gs_texa_texture(ICO_T2D(float4) tex, SamplerState smp, float2 uvn, uint flags)
 {
     uint w, h;
-    tex.GetDimensions(w, h);
+    ICO_DIMS(tex, w, h);
     const int2 size = max(int2(int(w), int(h)), int2(1, 1));
     const float2 tc = uvn * float2(size);
     const float2 dx = ddx(uvn), dy = ddy(uvn);
     const float2 tdx = dx * float2(size), tdy = dy * float2(size);
     const bool minified = max(dot(tdx, tdx), dot(tdy, tdy)) > 1.0;
     if (minified && (flags & DF_TEXA_MIN_SAMPLED) != 0u) {
-        uint4 t = uint4(floor(tex.SampleGrad(smp, uvn, dx, dy) * 255.0 + 0.5));
+        uint4 t = uint4(floor(tex.SampleGrad(smp, ICO_UV(uvn), dx, dy) * 255.0 + 0.5));
         return gs_texa_expand(t, g_mode.y & 0xFFu, g_mode.y >> 8);
     }
     const bool filtered = (flags & (minified ? DF_TEXA_MIN_LINEAR : DF_TEXA_MAG_LINEAR)) != 0u;
@@ -613,10 +622,10 @@ float gs_lod_level(float q)
 // on tex's level 0, gs_nearest_texel), for the sampler to read: the
 // interpolated UV's own rounding took the texel on either side of a
 // boundary depending on the frame's width and the row.
-float2 gs_nearest_uv(Texture2D<float4> tex, float2 uvn)
+float2 gs_nearest_uv(ICO_T2D(float4) tex, float2 uvn)
 {
     uint w, h;
-    tex.GetDimensions(w, h);
+    ICO_DIMS(tex, w, h);
     const float2 size = float2(max(w, 1u), max(h, 1u));
     return (float2(gs_nearest_texel(uvn * size)) + 0.5) / size;
 }
@@ -626,18 +635,18 @@ float2 gs_nearest_uv(Texture2D<float4> tex, float2 uvn)
 // wrapped as the sampler wraps (DF_TEXA_CLAMP_S/T), and for MMIN 3 on the
 // level after it too, the two blended by the LOD's fraction in 256ths,
 // truncated (as gs_texa_texture_lod blends them).
-float4 gs_sample_lod_nearest(Texture2D<float4> tex, float2 uvn, float q)
+float4 gs_sample_lod_nearest(ICO_T2D(float4) tex, float2 uvn, float q)
 {
     const float lv = gs_lod_level(q);
     const uint l0 = uint(floor(lv));
     uint w, h, n;
-    tex.GetDimensions(l0, w, h, n);
+    ICO_DIMS_LV(tex, l0, w, h, n);
     int2 size = max(int2(int(w), int(h)), int2(1, 1));
     uint4 t = gs_load_lv(tex, gs_nearest_texel(uvn * float2(size)), size, l0, g_mode.x);
     if (gs_lod(q) > 0.0 && (g_blend.w & 7u) == 3u) {
         const uint f = uint(floor((lv - float(l0)) * 256.0));
         if (f > 0u) {
-            tex.GetDimensions(l0 + 1u, w, h, n);
+            ICO_DIMS_LV(tex, l0 + 1u, w, h, n);
             size = max(int2(int(w), int(h)), int2(1, 1));
             const uint4 u =
                 gs_load_lv(tex, gs_nearest_texel(uvn * float2(size)), size, l0 + 1u, g_mode.x);
@@ -666,15 +675,15 @@ float4 gs_sample_lod_nearest(Texture2D<float4> tex, float2 uvn, float q)
 // wraps (REPEAT or CLAMP at the level's size) as gs_load_lv does. lod the
 // level for SampleLevel: lv, or for level 0 at most 1/256 above it (above
 // 0 the sampler takes the MMIN filter, as gs_lod_level has it).
-uint4 gs_grid_level(Texture2D<float4> tex, SamplerState smp, float2 uvn, uint lv, float lod)
+uint4 gs_grid_level(ICO_T2D(float4) tex, SamplerState smp, float2 uvn, uint lv, float lod)
 {
     uint w, h, n;
-    tex.GetDimensions(lv, w, h, n);
+    ICO_DIMS_LV(tex, lv, w, h, n);
     const float2 size = float2(max(w, 1u), max(h, 1u));
     const float2 tc = uvn * size;
     const float2 q = floor(tc * 16.0 + 0.5);
     const float2 uvg = q * (1.0 / 16.0) / size;
-    return uint4(floor(tex.SampleLevel(smp, uvg, lod) * 255.0 + 0.5));
+    return uint4(floor(tex.SampleLevel(smp, ICO_UV(uvg), lod) * 255.0 + 0.5));
 }
 
 // gs_sample with DF_GS_BILINEAR_GRID: gs_texa_texture_lod's levels and
@@ -686,7 +695,7 @@ uint4 gs_grid_level(Texture2D<float4> tex, SamplerState smp, float2 uvn, uint lv
 // whose filter is exact to within a level the sampler's value is 0 to 2
 // levels above the GS's, never below (docs/port/RENDER.md, "Textures");
 // the blend of two levels keeps that bound.
-float4 gs_sample_gs_bilinear(Texture2D<float4> tex, SamplerState smp, float2 uvn, float q)
+float4 gs_sample_gs_bilinear(ICO_T2D(float4) tex, SamplerState smp, float2 uvn, float q)
 {
     const float lv = gs_lod_level(q);
     const uint l0 = uint(floor(lv));
@@ -706,7 +715,7 @@ float4 gs_sample_gs_bilinear(Texture2D<float4> tex, SamplerState smp, float2 uvn
 // texel there with DF_NEAREST, the GS's grid with DF_GS_BILINEAR_GRID),
 // the GS's nearest texel with DF_NEAREST alone (the sampler has the one
 // level), else as the sampler takes it (q unused).
-float4 gs_sample(Texture2D<float4> tex, SamplerState smp, float2 uv, float q)
+float4 gs_sample(ICO_T2D(float4) tex, SamplerState smp, float2 uv, float q)
 {
     if ((g_mode.x & DF_GS_LOD) != 0u) {
         if ((g_mode.x & DF_NEAREST) != 0u) {
@@ -715,26 +724,26 @@ float4 gs_sample(Texture2D<float4> tex, SamplerState smp, float2 uv, float q)
         if ((g_mode.x & DF_GS_BILINEAR_GRID) != 0u) {
             return gs_sample_gs_bilinear(tex, smp, uv, q);
         }
-        return tex.SampleLevel(smp, uv, gs_lod_level(q));
+        return tex.SampleLevel(smp, ICO_UV(uv), gs_lod_level(q));
     }
     if ((g_mode.x & DF_NEAREST) != 0u) {
-        return tex.SampleLevel(smp, gs_nearest_uv(tex, uv), 0.0);
+        return tex.SampleLevel(smp, ICO_UV(gs_nearest_uv(tex, uv)), 0.0);
     }
-    return tex.Sample(smp, uv);
+    return tex.Sample(smp, ICO_UV(uv));
 }
 
 // gs_texa_load at mip level lv of t1.
-uint4 gs_texa_load_lv(Texture2D<float4> tex, int2 c, int2 size, uint lv, uint flags)
+uint4 gs_texa_load_lv(ICO_T2D(float4) tex, int2 c, int2 size, uint lv, uint flags)
 {
     return gs_texa_expand(gs_load_lv(tex, c, size, lv, flags), g_mode.y & 0xFFu, g_mode.y >> 8);
 }
 
 // gs_texa_texture's four taps at mip level lv (filtered: bilinear with the
 // GS's 4-bit fractions, else the nearest texel).
-uint4 gs_texa_level(Texture2D<float4> tex, float2 uvn, uint lv, bool filtered, uint flags)
+uint4 gs_texa_level(ICO_T2D(float4) tex, float2 uvn, uint lv, bool filtered, uint flags)
 {
     uint w, h, n;
-    tex.GetDimensions(lv, w, h, n);
+    ICO_DIMS_LV(tex, lv, w, h, n);
     const int2 size = max(int2(int(w), int(h)), int2(1, 1));
     const float2 tc = uvn * float2(size);
     if (!filtered) {
@@ -753,7 +762,7 @@ uint4 gs_texa_level(Texture2D<float4> tex, float2 uvn, uint lv, bool filtered, u
 // gs_texa_texture with DF_GS_LOD: the level (or the two levels, blended by
 // the LOD's fraction in 256ths, for MMIN 3 and 5) by gs_lod_level, the
 // filter within a level MMAG or MMIN by the LOD's sign.
-uint4 gs_texa_texture_lod(Texture2D<float4> tex, float2 uvn, float q, uint flags)
+uint4 gs_texa_texture_lod(ICO_T2D(float4) tex, float2 uvn, float q, uint flags)
 {
     const bool minified = gs_lod(q) > 0.0;
     const bool filtered = (flags & (minified ? DF_TEXA_MIN_LINEAR : DF_TEXA_MAG_LINEAR)) != 0u;
@@ -1053,9 +1062,9 @@ float gs_dst_date_snap()
 // (gs_dst_date_snap). Every other build never has DF_DATE_DST.
 #if ICO_DST_MODE == 2
 #define GS_DATE_SNAP(snap, p)                                                                     \
-    ((g_mode.x & DF_DATE_DST) != 0u ? gs_dst_date_snap() : (snap).Load(int3((p), 0)))
+    ((g_mode.x & DF_DATE_DST) != 0u ? gs_dst_date_snap() : (snap).Load(ICO_LD((p), 0)))
 #else
-#define GS_DATE_SNAP(snap, p) (snap).Load(int3((p), 0))
+#define GS_DATE_SNAP(snap, p) (snap).Load(ICO_LD((p), 0))
 #endif
 
 // ------------------------------------------------------- vertex helpers
@@ -1158,6 +1167,42 @@ void fullscreen_triangle(uint id, out float4 pos, out float2 t)
                  (1.0 - c.y * 2.0) * k.y - (g_vpo.y - g_jitter.y) * g_vp.y, 0.0, 1.0);
     t = c;
 }
+
+#ifdef ICO_VR
+// VR fork (port/render/rd_vr.h): a GS screen position h (homogeneous: x, y
+// in GS pixels times w, z the GS Z times w, the form the VU programs' h
+// takes) to clip space, linear in h (vu_common.hlsli vu_homogeneous_position's
+// mapping), so the GPU clips what lies behind the eye and interpolates the
+// attributes the GS made linear on the camera's screen correctly on the eye's
+float4 gs_homogeneous_position(float4 h)
+{
+    precise float z = 16.0 * h.z * g_z.x;
+    if (g_vp.x != 0.0) {
+        precise float2 c = g_origin.xy + g_target.xy * 0.5;
+        precise float x = ((h.x - c.x * h.w) * g_vp.z + (g_frame.w + g_vpo.x) * h.w) * g_vp.x;
+        precise float y = -(((h.y - c.y * h.w) * g_vp.w + (g_frame.w + g_vpo.y) * h.w) * g_vp.y);
+        return float4(x, y, z, h.w);
+    }
+    float2 o = g_origin.xy - g_origin.zw;
+    precise float x = (h.x - o.x * h.w) * g_target.z * 2.0 - h.w;
+    precise float y = h.w - (h.y - o.y * h.w) * g_target.w * 2.0;
+    return float4(x, y, z, h.w);
+}
+
+// A screen prim the frame camera projected (DrawCB.g_vr.x) seen from this
+// eye: its GS X, Y (12.4) and Z through FrameCB.vrScreen; false (pos
+// untouched) for every other prim
+bool gs_eye_position(uint2 xy, uint z, inout float4 pos)
+{
+    if (g_vr.x == 0u || g_vrMode.x == 0.0) {
+        return false;
+    }
+    float4 h = mul(g_vrScreen[g_viewIndex],
+                   float4(float2(xy) * (1.0 / 16.0), float(z) * (1.0 / 16.0), 1.0));
+    pos = gs_homogeneous_position(h);
+    return true;
+}
+#endif
 
 #endif // ICO_GS_MATH_C
 #endif

@@ -597,6 +597,11 @@ if(TARGET ico_pc AND NOT ICO_HEADLESS)
         target_sources(ico_pc PRIVATE port/platform/display_clock_win.c
                                       port/platform/window_pump_win.c
                                       port/platform/app_icon_exe.c port/platform/icon_stamp.c)
+        # VR fork: the OpenXR headset (port/platform/vr_openxr.h); the loader
+        # (openxr_loader.dll beside the program) is loaded at run time
+        target_sources(ico_pc PRIVATE port/platform/vr_openxr.c)
+        target_include_directories(ico_pc PRIVATE port/third_party/openxr/include
+                                                  "${ICO_VULKAN_INCLUDE_DIR}")
     else()
         target_sources(ico_pc PRIVATE port/platform/display_clock_none.c)
     endif()

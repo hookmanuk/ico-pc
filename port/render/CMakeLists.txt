@@ -223,6 +223,7 @@ add_library(ico_render STATIC
     rd_png.c
     rd_post.c
     rd_present.c
+    rd_vr.c # VR fork: the eyes' matrices, the headset's output and its publication
     rd_prerotate.c # the present turned into a swapchain made in the surface's own turn
     rd_present_info.c # rd_last_present_info's record: what the last present drew
     rd_icon_hold.c # the title's last picture held on screen while the icon capture's frames are drawn

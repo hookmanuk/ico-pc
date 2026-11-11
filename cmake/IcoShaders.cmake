@@ -55,6 +55,7 @@
 # overrides the path. Without a compiler the shaders are left out
 # (ICO_SHADERS_AVAILABLE is false), as the other fetched dependencies are.
 
+option(ICO_VR "VR fork: the stereo shader variants (port/rhi/rhi_vr.h)" ON)
 set(ICO_DXC "" CACHE FILEPATH "DXC executable (default: tools/toolchain/deps/dxc/bin/dxc)")
 option(ICO_SHADERS_DXIL "Also compile the shaders to DXIL for the D3D12 backend" ON)
 set(ICO_SPIRV_CROSS "" CACHE FILEPATH
@@ -224,6 +225,37 @@ function(ico_add_shader name file entry stage)
     endif()
     set_property(GLOBAL APPEND PROPERTY ICO_SHADER_MANIFEST
                  "${name}|${stage_n}|${entry}|${spv}|${dxil}|${glsl}|${_ico_sh_hlslfile}|${_ico_sh_defines}")
+    # VR fork: the same entry for the stereo mode (port/rhi/rhi_vr.h), SPIR-V
+    # alone, every texture a two-layer array read by the view index
+    # (common.hlsli ICO_VR); ico_find_shader takes it while g_icoShaderVr
+    if(ICO_VR AND NOT stage_n STREQUAL "compute")
+        set(_vr_spv "${ICO_SHADER_OUT_DIR}/${name}_vr.spv")
+        set(_vr_depfile "")
+        set(_vr_depcmd "")
+        if(CMAKE_GENERATOR MATCHES "Ninja|Makefiles")
+            set(_vr_dep "${ICO_SHADER_OUT_DIR}/${name}_vr.d")
+            set(_vr_depfile DEPFILE "${_vr_dep}")
+            set(_vr_depcmd COMMAND "${ICO_DXC_EXE}" -spirv -fspv-target-env=vulkan1.1
+                -fvk-b-shift 0 all -fvk-t-shift 16 all -fvk-s-shift 32 all -fvk-u-shift 48 all
+                ${ICO_DXC_COMMON_FLAGS} ${_ico_sh_d} -D ICO_VR=1 -T ${profile} -E ${entry} "${src}"
+                -Fo "${_vr_spv}" -MF "${_vr_dep}")
+        endif()
+        add_custom_command(
+            OUTPUT "${_vr_spv}"
+            COMMAND "${CMAKE_COMMAND}" -E make_directory "${ICO_SHADER_OUT_DIR}"
+            COMMAND "${ICO_DXC_EXE}" -spirv -fspv-target-env=vulkan1.1
+                    -fvk-b-shift 0 all -fvk-t-shift 16 all -fvk-s-shift 32 all -fvk-u-shift 48 all
+                    ${ICO_DXC_COMMON_FLAGS} ${_ico_sh_d} -D ICO_VR=1 -T ${profile} -E ${entry}
+                    "${src}" -Fo "${_vr_spv}"
+            ${_vr_depcmd}
+            DEPENDS "${src}" ${_hlsli} "${ICO_DXC_EXE}"
+            ${_vr_depfile}
+            COMMENT "DXC ${name}_vr (${entry}, ${profile}, VR): SPIR-V"
+            VERBATIM)
+        set_property(GLOBAL APPEND PROPERTY ICO_SHADER_BLOBS "${_vr_spv}")
+        set_property(GLOBAL APPEND PROPERTY ICO_SHADER_MANIFEST
+                     "${name}_vr|${stage_n}|${entry}|${_vr_spv}|-|-|${_ico_sh_hlslfile}|${_ico_sh_defines}")
+    endif()
     # shaders_d3d11_check's line for the entry (ico_shaders_library)
     set_property(GLOBAL APPEND PROPERTY ICO_SHADER_D3D11_CHECKS
                  "${name}|${profile}|${entry}|${src}|${_ico_sh_defines}")

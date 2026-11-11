@@ -53,8 +53,8 @@ cbuffer CrtCB : ICO_REG(b1, 1)
     float4 c_toneOn; // x: 1 on, 0 off; yzw unused (IcoCrtCB.pad[4..7])
 };
 
-Texture2D<float4> g_texture : ICO_REG(t1, 2);
-Texture2D<float4> g_bloom : ICO_REG(t2, 2);
+ICO_T2D(float4) g_texture : ICO_REG(t1, 2);
+ICO_T2D(float4) g_bloom : ICO_REG(t2, 2);
 SamplerState g_sampler : ICO_REG(s1, 2);
 
 struct CrtVSOut
@@ -96,7 +96,7 @@ float3 toneOf(float3 c)
 
 float3 linearAt(float2 uv)
 {
-    return powp(toneOf(g_texture.SampleLevel(g_sampler, uv, 0.0).rgb), c_tone.y);
+    return powp(toneOf(g_texture.SampleLevel(g_sampler, ICO_UV(uv), 0.0).rgb), c_tone.y);
 }
 
 // The 9-tap Gaussian, sigma 2 taps: exp(-i^2 / 8), i = 0..4, normalised
@@ -117,11 +117,11 @@ float4 crt_bloom_ps(CrtVSOut i) : SV_Target0
 // Vertical, on the horizontal pass's target (c_pass.w its texel height)
 float4 crt_blur_ps(CrtVSOut i) : SV_Target0
 {
-    float3 c = g_texture.SampleLevel(g_sampler, i.uv, 0.0).rgb * kGauss[0];
+    float3 c = g_texture.SampleLevel(g_sampler, ICO_UV(i.uv), 0.0).rgb * kGauss[0];
     [unroll] for (int k = 1; k <= 4; k++) {
         float2 d = float2(0.0, float(k) * c_pass.w);
-        c += (g_texture.SampleLevel(g_sampler, i.uv + d, 0.0).rgb +
-              g_texture.SampleLevel(g_sampler, i.uv - d, 0.0).rgb) * kGauss[k];
+        c += (g_texture.SampleLevel(g_sampler, ICO_UV(i.uv + d), 0.0).rgb +
+              g_texture.SampleLevel(g_sampler, ICO_UV(i.uv - d), 0.0).rgb) * kGauss[k];
     }
     return float4(c, 1.0);
 }
@@ -130,7 +130,7 @@ float4 crt_blur_ps(CrtVSOut i) : SV_Target0
 float3 linearLoad(int2 p)
 {
     int2 hi = int2(c_src.xy) - int2(1, 1);
-    return powp(toneOf(g_texture.Load(int3(clamp(p, int2(0, 0), hi), 0)).rgb), c_tone.y);
+    return powp(toneOf(g_texture.Load(ICO_LD(clamp(p, int2(0, 0), hi), 0)).rgb), c_tone.y);
 }
 
 // The beam of a line of colour c at distance d (lines): a Gaussian whose
@@ -428,15 +428,15 @@ float4 crt_ps(CrtVSOut i) : SV_Target0
     // picture (rd_crt.c rd__crt_glow_mix), so a flat field keeps its level and
     // a highlight spreads rather than brightens
     float2 wm = float2(mirror > 0.5 ? 1.0 - w.x : w.x, w.y);
-    float3 b = g_bloom.SampleLevel(g_sampler, wm, 0.0).rgb;
+    float3 b = g_bloom.SampleLevel(g_sampler, ICO_UV(wm), 0.0).rgb;
     float3 halo = b;
     float kh = 0.0;
     if (c_mask.w > 0.0) {
         float2 dx = float2(4.0 * c_pass.z, 0.0), dy = float2(0.0, 4.0 * c_pass.w);
-        halo = (b + g_bloom.SampleLevel(g_sampler, wm + dx, 0.0).rgb +
-                g_bloom.SampleLevel(g_sampler, wm - dx, 0.0).rgb +
-                g_bloom.SampleLevel(g_sampler, wm + dy, 0.0).rgb +
-                g_bloom.SampleLevel(g_sampler, wm - dy, 0.0).rgb) * 0.2;
+        halo = (b + g_bloom.SampleLevel(g_sampler, ICO_UV(wm + dx), 0.0).rgb +
+                g_bloom.SampleLevel(g_sampler, ICO_UV(wm - dx), 0.0).rgb +
+                g_bloom.SampleLevel(g_sampler, ICO_UV(wm + dy), 0.0).rgb +
+                g_bloom.SampleLevel(g_sampler, ICO_UV(wm - dy), 0.0).rgb) * 0.2;
         kh = st * c_mask.w;
     }
     float kb = st * c_glow.x * smoothstep(0.2, 1.0, luma(b));

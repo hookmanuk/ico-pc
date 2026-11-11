@@ -17,13 +17,13 @@ float4 blend_int_vs(uint id : SV_VertexID) : SV_Position
     return pos;
 }
 
-Texture2D<uint4> g_src : ICO_REG(t1, 2);
-Texture2D<uint4> g_dst : ICO_REG(t2, 2);
+ICO_T2D(uint4) g_src : ICO_REG(t1, 2);
+ICO_T2D(uint4) g_dst : ICO_REG(t2, 2);
 
 uint4 blend_int_ps(float4 frag : SV_Position) : SV_Target0
 {
     int2 p = int2(frag.xy) + int2(g_param.xy);
-    uint4 cs = g_src.Load(int3(p, 0));
-    uint4 cd = g_dst.Load(int3(p, 0));
+    uint4 cs = g_src.Load(ICO_LD(p, 0));
+    uint4 cd = g_dst.Load(ICO_LD(p, 0));
     return gs_blend_int(cs, cd, g_blend.x, g_blend.y, g_blend.z);
 }

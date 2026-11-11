@@ -57,6 +57,15 @@ typedef struct IcoFrameCB {
      * pixel side subtracts it (common.hlsli g_jitter); 0 in every other
      * frame group; zw reserved (0) */
     float jitter[4];
+    /* VR fork (port/render/rd_vr.h): per view, the camera's GS screen to the
+     * eye's (vrScreen), the VU programs' clip space to the eye's (vrClip) and
+     * the flat screen's place in the eye (vrHud); vrMode.x 1 where the pass
+     * draws the frame camera's world.  Read by the stereo shaders alone
+     * (common.hlsli ICO_VR); identities and 0 elsewhere */
+    float vrScreen[2][16];
+    float vrClip[2][16];
+    float vrHud[2][16];
+    float vrMode[4];
 } IcoFrameCB;
 
 /* DrawCB: group 1, slot 1 (register b1, space1). */
@@ -92,6 +101,9 @@ typedef struct IcoDrawCB {
      * source at (blit.hlsl).  Zero in every other draw. */
     uint32_t aux0[4];
     uint32_t aux1[4];
+    /* VR fork: x 1 on a screen prim the frame camera projected (it takes
+     * FrameCB.vrScreen), else 0 (port/render/rd_vr.h) */
+    uint32_t vr[4];
 } IcoDrawCB;
 
 /* crt.hlsl's CrtCB, group 1, slot 1 (register b1, space1),
@@ -115,7 +127,7 @@ typedef struct IcoCrtCB {
      * brightness, contrast, saturation, gamma; rd__tone_params), [4] 1 with
      * it on (c_toneOn.x; rd__tone_active), [5..7] 0; also keeps the slot's
      * size with IcoDrawCB (its aux blocks) */
-    float pad[8];
+    float pad[12]; /* VR fork: + DrawCB.vr */
 } IcoCrtCB;
 
 /* FsrCB (fsr1.hlsl): group 1, slot 1, DrawCB's register and size, so the
@@ -130,7 +142,7 @@ typedef struct IcoFsrCB {
     uint32_t con3[4]; /* EASU: the fourth gather's offset, zw 0 */
     uint32_t rcas[4]; /* RCAS: x the sharpness (2^-stops) as a float, y the same as two halves */
     uint32_t last[4]; /* x, y: the RCAS input's last column and row (its loads clamp there) */
-    uint32_t pad[12];
+    uint32_t pad[16]; /* VR fork: + DrawCB.vr */
 } IcoFsrCB;
 
 /* DrawCB.mode[0] flags (DF_* in common.hlsli). */
@@ -386,7 +398,8 @@ _Static_assert(offsetof(IcoFrameCB, vpo) == 320, "vpo");
 
 _Static_assert(offsetof(IcoFrameCB, jitter) == 336, "jitter");
 
-_Static_assert(sizeof(IcoFrameCB) == 352, "FrameCB size");
+_Static_assert(offsetof(IcoFrameCB, vrScreen) == 352, "vrScreen");
+_Static_assert(sizeof(IcoFrameCB) == 752, "FrameCB size");
 
 _Static_assert(offsetof(IcoDrawCB, mode) == 16, "mode");
 
@@ -400,7 +413,7 @@ _Static_assert(offsetof(IcoDrawCB, param) == 80, "param");
 
 _Static_assert(offsetof(IcoDrawCB, scale) == 96, "scale");
 
-_Static_assert(sizeof(IcoDrawCB) == 144, "DrawCB size");
+_Static_assert(sizeof(IcoDrawCB) == 160, "DrawCB size");
 
 _Static_assert(sizeof(IcoCrtCB) == sizeof(IcoDrawCB), "CrtCB shares DrawCB's slot and size");
 

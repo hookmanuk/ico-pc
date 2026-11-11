@@ -1359,6 +1359,7 @@ static bool vkr_pipe_prepare(const RhiPipelineDesc *d, VkrPipeJob *j)
     VkFormat depthFmt = vkr_vk_format(d->depthFormat);
     j->ri = (VkPipelineRenderingCreateInfo){
         .sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO,
+        .viewMask = g_vkr.stereo ? 3u : 0u, /* VR fork: both eyes (rhi_vr.h) */
         .colorAttachmentCount = d->colorCount,
         .pColorAttachmentFormats = j->colorFormats,
         .depthAttachmentFormat = depthFmt,

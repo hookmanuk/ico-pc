@@ -17,4 +17,38 @@
 #define ICO_REG(r, s) register(r, ICO_REG_SPACE(s))
 #endif
 
+
+// VR fork: the stereo mode (port/rhi/rhi_vr.h, ICO_VR=1, SPIR-V only).
+// Every texture is a two-layer array, one layer an eye, and multiview draws
+// both eyes in one draw: a shader reads its own eye's layer by the view
+// index (g_viewIndex, SPIR-V's ViewIndex built-in: 0 the left eye, 1 the
+// right).  Without ICO_VR the macros are the plain Texture2D forms, so the
+// sources stay one for every backend.
+//   ICO_T2D(T)               the texture type
+//   ICO_UV(uv)               a sample's coordinate (float2)
+//   ICO_LD(c, lv)            Load's coordinate of int2 c at level lv
+//   ICO_LDXY(x, y, lv)       the same from two ints
+//   ICO_LD3(p)               the same from an int3 (xy, level)
+//   ICO_DIMS(t, w, h)        GetDimensions(w, h)
+//   ICO_DIMS_LV(t, lv, w, h, n) GetDimensions(lv, w, h, n)
+#ifdef ICO_VR
+[[vk::ext_extension("SPV_KHR_multiview")]] [[vk::ext_capability(/* MultiView */ 4439)]]
+[[vk::ext_builtin_input(/* ViewIndex */ 4440)]] static const uint g_viewIndex;
+#define ICO_T2D(T) Texture2DArray<T>
+#define ICO_UV(uv) float3((uv), (float)g_viewIndex)
+#define ICO_LD(c, lv) int4((c), (int)g_viewIndex, (lv))
+#define ICO_LDXY(x, y, lv) int4((x), (y), (int)g_viewIndex, (lv))
+#define ICO_LD3(p) int4((p).xy, (int)g_viewIndex, (p).z)
+#define ICO_DIMS(t, w, h) { uint ico_dims_l_; (t).GetDimensions((w), (h), ico_dims_l_); }
+#define ICO_DIMS_LV(t, lv, w, h, n) { uint ico_dims_l_; (t).GetDimensions((lv), (w), (h), ico_dims_l_, (n)); }
+#else
+#define ICO_T2D(T) Texture2D<T>
+#define ICO_UV(uv) (uv)
+#define ICO_LD(c, lv) int3((c), (lv))
+#define ICO_LDXY(x, y, lv) int3((x), (y), (lv))
+#define ICO_LD3(p) (p)
+#define ICO_DIMS(t, w, h) (t).GetDimensions((w), (h))
+#define ICO_DIMS_LV(t, lv, w, h, n) (t).GetDimensions((lv), (w), (h), (n))
+#endif
+
 #endif

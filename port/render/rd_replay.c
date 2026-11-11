@@ -62,6 +62,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "rd_internal.h"
+#include "rd_vr.h"
 #include "rd_upload_late.h"
 #include "rd_jitter.h"
 #include "rd_layer.h"
@@ -960,6 +961,10 @@ RdUniform rd__frame_group_ex(uint32_t targetW, uint32_t targetH, float originX, 
     IcoFrameCB cb;
     memset(&cb, 0, sizeof(cb));
     rd__fill_camera_cb(&cb, s_hasReplayCam ? &s_replayCam : NULL);
+    /* VR fork (rd_vr.h): the eyes' matrices where the frame camera's
+     * picture (not a reflection camera's) is drawn */
+    rd__vr_fill_frame_cb(&cb, s_hasReplayCam ? &s_replayCam : NULL,
+                         s_hasReplayCam && (s_framePicture & 0xFFFFu) == 0u);
     cb.target[0] = (float)targetW;
     cb.target[1] = (float)targetH;
     cb.target[2] = 1.0f / (float)targetW;
@@ -3112,6 +3117,9 @@ static void sheetParam(const RdTexRec *t, float param[4])
 }
 
 /* DrawCB for one planned pass: sprite_ps and vu_ps read the same fields. */
+/* VR fork: the screen command being drawn (doScreen, doScreenWrap), whose
+ * kind fillDrawCB writes into DrawCB.vr (rd_vr.h) */
+static const RdCmd *s_vrScreenCmd;
 static void fillDrawCB(const Replay *r, const RdDrawPass *dp, const DrawSetup *ds, IcoDrawCB *cb)
 {
     memset(cb, 0, sizeof(*cb));
@@ -3198,6 +3206,7 @@ static void fillDrawCB(const Replay *r, const RdDrawPass *dp, const DrawSetup *d
     }
     cb->mode[2] = dp->modeZ;
     cb->mode[3] = dp->aref;
+    cb->vr[0] = rd__vr_screen_kind(s_vrScreenCmd); /* VR fork (rd_vr.h) */
     /* a pass the storage pass merge draws through the destination read
      * without GS blending: Cs (rd__dst_merge) */
     cb->blend[0] = dp->csOnly ? 0x00u : rd__alpha_register(r->st.ds.blend);
@@ -3520,7 +3529,17 @@ static RdUniform msaaFrame(const Replay *r, const DrawSetup *ds)
     return u;
 }
 
+static void doScreenBody(Replay *r, const RdFrame *f, const RdCmd *c);
+
 static void doScreen(Replay *r, const RdFrame *f, const RdCmd *c)
+{
+    const RdCmd *was = s_vrScreenCmd;
+    s_vrScreenCmd = c;
+    doScreenBody(r, f, c);
+    s_vrScreenCmd = was;
+}
+
+static void doScreenBody(Replay *r, const RdFrame *f, const RdCmd *c)
 {
     DrawSetup ds;
     if ((g_rd.deferText && c->b[3] == RD_SCREEN_TEXT_QUADS) || rd__fades_fold_skip(g_rdStoreOrd)) {
@@ -4056,7 +4075,17 @@ static RhiPipeline wrapPipeline(int resolve, uint8_t vs, uint8_t prim, RhiFormat
     return p;
 }
 
+static void doScreenWrapBody(Replay *r, const RdFrame *f, const RdCmd *c);
+
 static void doScreenWrap(Replay *r, const RdFrame *f, const RdCmd *c)
+{
+    const RdCmd *was = s_vrScreenCmd;
+    s_vrScreenCmd = c;
+    doScreenWrapBody(r, f, c);
+    s_vrScreenCmd = was;
+}
+
+static void doScreenWrapBody(Replay *r, const RdFrame *f, const RdCmd *c)
 {
     DrawSetup ds;
     if (!prepareDraw(r, &ds, NULL)) {

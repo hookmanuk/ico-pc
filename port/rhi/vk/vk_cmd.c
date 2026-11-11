@@ -1124,7 +1124,7 @@ void vkr_image_barrier(VkrCmdList *c, VkrTexture *t, RhiState before, RhiState a
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .image = t->image,
-        .subresourceRange = {t->aspects, 0, t->mips, 0, 1},
+        .subresourceRange = {t->aspects, 0, t->mips, 0, t->layers ? t->layers : 1u},
     };
     if (after == RHI_STATE_PRESENT) {
         dst = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
@@ -1343,7 +1343,7 @@ static void vkr_hz_image(VkrHz *h, const VkrCmdList *c, VkrTexture *t, VkImageLa
         .srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED,
         .image = t->image,
-        .subresourceRange = {t->aspects, 0, t->mips, 0, 1},
+        .subresourceRange = {t->aspects, 0, t->mips, 0, t->layers ? t->layers : 1u},
     };
     h->src |= src;
     h->dst |= dstStages;
@@ -2481,10 +2481,15 @@ void rhi_cmd_copy_buffer_to_texture(RhiCommandList cl, RhiBuffer src, uint64_t s
         .imageOffset = {region.x, region.y, 0},
         .imageExtent = {region.w, region.h, 1},
     };
+    /* VR fork: the same texels into each eye's layer */
+    VkBufferImageCopy rs[2] = {r, r};
+    rs[1].imageSubresource.baseArrayLayer = 1;
+    const uint32_t uploadLayers = t->layers > 1u ? 2u : 1u;
     vkr_range_rows(c, "a buffer-to-texture copy's source rows", s, srcOffset, rowPitch, t, region);
     vkr_range_image(c, "a buffer-to-texture copy's region", t, mip, region);
     vkr_hz_copy(c, NULL, s, t, mip, NULL);
-    vkCmdCopyBufferToImage(c->cb, s->buffer, t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &r);
+    vkCmdCopyBufferToImage(c->cb, s->buffer, t->image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                           uploadLayers, rs);
     g_vkr.stats.copies++;
 }
 
@@ -2501,10 +2506,13 @@ void rhi_cmd_copy_texture(RhiCommandList cl, RhiTexture src, RhiRect srcRegion, 
         VKR_LOG("rhi_cmd_copy_texture: a multisampled texture is not copied (resolve it)");
         return;
     }
+    /* VR fork: every layer both hold */
+    const uint32_t copyLayersMin = s->layers < d->layers ? s->layers : d->layers;
+    const uint32_t copyLayers = copyLayersMin ? copyLayersMin : 1u;
     VkImageCopy r = {
-        .srcSubresource = {s->aspects, 0, 0, 1},
+        .srcSubresource = {s->aspects, 0, 0, copyLayers},
         .srcOffset = {srcRegion.x, srcRegion.y, 0},
-        .dstSubresource = {d->aspects, 0, 0, 1},
+        .dstSubresource = {d->aspects, 0, 0, copyLayers},
         .dstOffset = {dstX, dstY, 0},
         .extent = {srcRegion.w, srcRegion.h, 1},
     };
@@ -2531,10 +2539,11 @@ void rhi_cmd_resolve_color(RhiCommandList cl, RhiTexture src, RhiTexture dst)
                 "single-sampled one of its size and format");
         return;
     }
+    const uint32_t resolveLayers = s->layers < d->layers ? s->layers : d->layers;
     VkImageResolve r = {
-        .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+        .srcSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, resolveLayers ? resolveLayers : 1u},
         .srcOffset = {0, 0, 0},
-        .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, 1},
+        .dstSubresource = {VK_IMAGE_ASPECT_COLOR_BIT, 0, 0, resolveLayers ? resolveLayers : 1u},
         .dstOffset = {0, 0, 0},
         .extent = {s->width, s->height, 1},
     };

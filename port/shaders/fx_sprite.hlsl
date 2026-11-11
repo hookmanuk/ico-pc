@@ -131,36 +131,36 @@ float4 fx_rect_vs(uint id : SV_VertexID) : SV_Position
 
 #ifdef ICO_UINT_SRC
 // fx_sprite_u_ps: the integer texel through the RGBA8_UINT view
-Texture2D<uint4> g_texture : ICO_REG(t1, 2);
+ICO_T2D(uint4) g_texture : ICO_REG(t1, 2);
 SamplerState g_sampler : ICO_REG(s1, 2);
-Texture2D<uint4> g_dest : ICO_REG(t2, 2);
+ICO_T2D(uint4) g_dest : ICO_REG(t2, 2);
 
-uint4 fx_load(Texture2D<uint4> t, int2 c)
+uint4 fx_load(ICO_T2D(uint4) t, int2 c)
 {
-    return t.Load(int3(c, 0));
+    return t.Load(ICO_LD(c, 0));
 }
 #elif defined(ICO_FX_DST_LOCAL)
 // fx_local_ps: rd's layoutLocal (t1 the input attachment, t2 the texture)
-Texture2D<float4> g_texture : ICO_REG(t2, 2);
+ICO_T2D(float4) g_texture : ICO_REG(t2, 2);
 #ifdef __spirv__
 [[vk::input_attachment_index(0)]] SubpassInput<float4> g_destIn : ICO_REG(t1, 2);
 #define FX_DST_LOCAL_READ 1
 #else
-Texture2D<float4> g_dest : ICO_REG(t1, 2);
+ICO_T2D(float4) g_dest : ICO_REG(t1, 2);
 #endif
 
-uint4 fx_load(Texture2D<float4> t, int2 c)
+uint4 fx_load(ICO_T2D(float4) t, int2 c)
 {
-    return uint4(floor(t.Load(int3(c, 0)) * 255.0 + 0.5));
+    return uint4(floor(t.Load(ICO_LD(c, 0)) * 255.0 + 0.5));
 }
 #else
-Texture2D<float4> g_texture : ICO_REG(t1, 2);
+ICO_T2D(float4) g_texture : ICO_REG(t1, 2);
 SamplerState g_sampler : ICO_REG(s1, 2);
-Texture2D<float4> g_dest : ICO_REG(t2, 2);
+ICO_T2D(float4) g_dest : ICO_REG(t2, 2);
 
-uint4 fx_load(Texture2D<float4> t, int2 c)
+uint4 fx_load(ICO_T2D(float4) t, int2 c)
 {
-    return uint4(floor(t.Load(int3(c, 0)) * 255.0 + 0.5));
+    return uint4(floor(t.Load(ICO_LD(c, 0)) * 255.0 + 0.5));
 }
 #endif
 
@@ -269,7 +269,7 @@ uint4 fx_texel(int2 c, uint flags)
 // (gs_texa_expand returns an RGBA32 texel as it is)
 uint fx_texel_alpha(int x, int y)
 {
-    const float4 t = g_texture.Load(int3(x, y, 0));
+    const float4 t = g_texture.Load(ICO_LDXY(x, y, 0));
     const uint fmt = g_mode.y >> 8;
     [branch] if (fmt == TEXFMT_RGBA32) {
         return uint(floor(t.a * 255.0 + 0.5));
@@ -969,18 +969,18 @@ float4 fx_blur2_ps(float4 pos : SV_Position) : SV_Target0
 float4 fx_acc_ps(float4 pos : SV_Position) : SV_Target0
 {
     const int3 p = int3(int2(pos.xy), 0);
-    const float4 s = floor(g_dest.Load(p) * 255.0 + 0.5);
+    const float4 s = floor(g_dest.Load(ICO_LD3(p)) * 255.0 + 0.5);
     const float a = g_param.x;
     [branch] if (a <= 0.0) {
         return s;
     }
-    const float3 acc = g_texture.Load(p).rgb;
+    const float3 acc = g_texture.Load(ICO_LD3(p)).rgb;
     return float4(s.rgb + a * (acc - s.rgb), s.a);
 }
 
 float4 fx_acc_resolve_ps(float4 pos : SV_Position) : SV_Target0
 {
-    const float3 acc = g_texture.Load(int3(int2(pos.xy), 0)).rgb;
+    const float3 acc = g_texture.Load(ICO_LD(int2(pos.xy), 0)).rgb;
     return float4(floor(clamp(acc, 0.0, 255.0) + 0.5) * (1.0 / 255.0), 1.0);
 }
 #endif

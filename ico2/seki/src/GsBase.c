@@ -2515,6 +2515,9 @@ static void gsbHostCommon(void)
     cam.nearZ = vsParam[7];
     cam.farZ = vsParam[8];
     rd_set_camera(&cam);
+    /* VR fork: the clip projection the VU programs' clip rows are made from,
+       for the eyes' clip spaces (port/render/rd_vr.h) */
+    rd_vr_set_clip_projection((const float *)(matrixptr + 0x1C0));
 }
 
 #endif

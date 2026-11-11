@@ -23,6 +23,9 @@
 #include "video_options.h"
 #include "window_disc.h"
 #include "window_lines.h"
+#ifdef _WIN32
+#include "vr_openxr.h" /* VR fork */
+#endif
 #ifdef __ANDROID__
 #include "android/gpu_driver_android.h"
 #endif
@@ -740,6 +743,48 @@ static void pace_locked(unsigned n, Uint64 period)
 /* The window is off the screen: minimised, hidden, occluded, or 0x0
    pixels (a Vulkan swapchain cannot be made); its presents do not wait for
    the display */
+#ifdef _WIN32
+/* VR fork (vr_openxr.h): one picture a headset frame.  Each frame the
+   headset's thread begins hands its views over (a token); the picture is
+   drawn with them at the interpolation's alpha for the time the frame began
+   (the headset's frames are one display period apart, so the alpha moves on
+   evenly), until this vsync's deadline, when the game steps.  The window
+   shows nothing of its own: the headset's frames pace the pictures. */
+static void vr_presents(Uint64 period)
+{
+    const Uint64 refresh = window_refresh_ns(period);
+    Uint64 tick = s_pres.tickPrev ? s_pres.tickAt - s_pres.tickPrev : 2 * period;
+    tick = tick < period ? period : (tick > 4 * period ? 4 * period : tick);
+    Uint64 now = SDL_GetTicksNS();
+    while (now < s_deadline) {
+        RdVrFrame f;
+        uint64_t at = 0;
+        if (!ico_vr_take_frame(&f, &at, s_deadline)) {
+            break;
+        }
+        const double r = at > s_pres.tickAt ? (double)(at - s_pres.tickAt) / (double)tick : 0.0;
+        const float a = (float)(r > 0.999 ? 0.999 : r);
+        const bool fresh = s_pres.presentedFrame != s_pres.frame;
+        rd_vr_post(&f);
+        const int ok = present_once(a, refresh, period);
+        now = SDL_GetTicksNS();
+        if (ok) {
+            pace_budget_present(&s_pres.budget, fresh);
+            rt_pipe_posted(now, refresh, period);
+        }
+    }
+    now = SDL_GetTicksNS();
+    if (now < s_deadline) {
+        SDL_DelayPrecise(s_deadline - now);
+    }
+    now = SDL_GetTicksNS();
+    window_pace_log(now);
+    if (now > s_deadline && now - s_deadline > RESYNC_NS) {
+        resync(now);
+    }
+}
+#endif
+
 static int window_off_screen(void)
 {
     int w = 0, h = 0;
@@ -882,6 +927,12 @@ void window_present_pace(int hz)
         window_pace_log(SDL_GetTicksNS());
         return;
     }
+#ifdef _WIN32
+    if (ico_vr_running()) {
+        vr_presents(period); /* VR fork: the headset's frames pace the pictures */
+        return;
+    }
+#endif
     /* the simulation keeps its vsync cadence in simulated time; until
        this vsync's deadline the window presents as often as vsync (and the
        framerate cap) allow, each present at alpha = the real time since the

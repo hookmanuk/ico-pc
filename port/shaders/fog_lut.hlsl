@@ -87,11 +87,11 @@ SubpassInput<float> g_fogDepthIn : ICO_REG(t1, 2);
 #elif defined(FOG_MS)
 Texture2DMS<float> g_fogDepth : ICO_REG(t1, 2);
 #elif defined(FOG_BUFFER)
-Texture2D<uint> g_fogDepth : ICO_REG(t1, 2);
+ICO_T2D(uint) g_fogDepth : ICO_REG(t1, 2);
 #else
-Texture2D<float> g_fogDepth : ICO_REG(t1, 2);
+ICO_T2D(float) g_fogDepth : ICO_REG(t1, 2);
 #endif
-Texture2D<float4> g_fogLut : ICO_REG(t2, 2);
+ICO_T2D(float4) g_fogLut : ICO_REG(t2, 2);
 
 #define FOG_ZTST_NEVER 0u
 #define FOG_ZTST_ALWAYS 1u
@@ -126,7 +126,7 @@ GS_PS_ATTR GS_PS_OUT fog_lut_ps(FogPSIn i)
         uint dn;
         g_fogDepth.GetDimensions(dw, dh, dn);
 #else
-        g_fogDepth.GetDimensions(dw, dh);
+        ICO_DIMS(g_fogDepth, dw, dh);
 #endif
         fsize.x = float(dw);
     }
@@ -138,12 +138,12 @@ GS_PS_ATTR GS_PS_OUT fog_lut_ps(FogPSIn i)
 #elif defined(FOG_MS)
     float d = g_fogDepth.Load(tc, int(i.sampleIndex));
 #elif defined(FOG_BUFFER)
-    uint raw = g_fogDepth.Load(int3(tc, 0));
+    uint raw = g_fogDepth.Load(ICO_LD(tc, 0));
     // the step as the sampled UNORM depth gives it (raw / (2^24 - 1)), or
     // the float's own bits
     float d = g_param.y > 0.0 ? float(raw & 0xFFFFFFu) / 16777215.0 : asfloat(raw);
 #else
-    float d = g_fogDepth.Load(int3(tc, 0));
+    float d = g_fogDepth.Load(ICO_LD(tc, 0));
 #endif
     if (g_param.z > 0.5) {
         d = 0.0;
@@ -174,12 +174,12 @@ GS_PS_ATTR GS_PS_OUT fog_lut_ps(FogPSIn i)
     }
     // PSMT8H after the PSMT4 byte copy: bits 16..23 of the GS Z
     uint idx = (z >> 16) & 0xFFu;
-    uint4 t = uint4(floor(g_fogLut.Load(int3(int(idx), 0, 0)) * 255.0 + 0.5));
+    uint4 t = uint4(floor(g_fogLut.Load(ICO_LDXY(int(idx), 0, 0)) * 255.0 + 0.5));
     uint4 col = uint4(floor(i.col + 0.5));
     if (g_param.w > 0.5) {
         // above 1x: between the entries, dithered (the header)
         const uint4 hi =
-            uint4(floor(g_fogLut.Load(int3(int(min(idx + 1u, 255u)), 0, 0)) * 255.0 + 0.5));
+            uint4(floor(g_fogLut.Load(ICO_LDXY(int(min(idx + 1u, 255u)), 0, 0)) * 255.0 + 0.5));
         const uint f = (z >> 8) & 0xFFu;
         // the Bayer cell's phase follows the frame's jitter in sixteenths of
         // a texel (g_jitter: the sub-texel shift a temporal upscaler gives

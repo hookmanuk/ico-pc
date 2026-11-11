@@ -553,6 +553,18 @@ uint4 vu_rgba(float4 c)
 }
 
 // clipw.xyz v, v.w: bit 0 +x (x > |w|), 1 -x, 2 +y, 3 -y, 4 +z, 5 -z.
+// VR fork: a position in the VU programs' clip space (rows 20..23) to this
+// eye's (port/render/rd_vr.h); itself outside the stereo mode
+float4 vu_eye_clip(float4 c)
+{
+#ifdef ICO_VR
+    if (g_vrMode.x != 0.0) {
+        return mul(g_vrClip[g_viewIndex], c);
+    }
+#endif
+    return c;
+}
+
 uint vu_clipw(float4 v)
 {
     float w = abs(v.w);
@@ -636,6 +648,12 @@ uint vu_gs_ok(float w, int gx, int gy, int gz)
 // p.xyz = h.xyz * q, ftoi4 (X, Y and Z: Z is p.z's).
 float vu_divide(inout VuVtx o)
 {
+#ifdef ICO_VR
+    // VR fork: the camera's screen to this eye's (port/render/rd_vr.h)
+    if (g_vrMode.x != 0.0) {
+        o.h = mul(g_vrScreen[g_viewIndex], o.h);
+    }
+#endif
     float q = vu_rcp(o.h.w);
     precise float3 p = o.h.xyz * q;
     o.p = p.xy;
@@ -2362,9 +2380,9 @@ float4 vu_corner_position(VuVtx me, uint mode, uint at)
 
 // ------------------------------------------------------------ pixel side
 
-Texture2D<float4> g_texture : ICO_REG(t1, 2);
+ICO_T2D(float4) g_texture : ICO_REG(t1, 2);
 SamplerState g_sampler : ICO_REG(s1, 2);
-Texture2D<float> g_dateSnap : ICO_REG(t2, 2);
+ICO_T2D(float) g_dateSnap : ICO_REG(t2, 2);
 
 // S/Q, T/Q: the texture's normalised UV.  On a Full pixel crop of the
 // frame (g_scale.z set, rd_replay.c fillDrawCB) the STs, normalised to the

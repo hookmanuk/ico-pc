@@ -10,6 +10,7 @@
 #include <string.h>
 #include "../core/region.h" /* ico_region: the June 2001 demo draws its own VU programs */
 #include "rd_internal.h"
+#include "rd_vr.h"
 #include "rd_mesh.h"
 #include "rd_passring.h"
 #include "rd_replay.h"
@@ -1592,8 +1593,9 @@ static bool vuSource(const RdFrame *f, const RdCmd *c, VuSource *s)
         vcb.batch[2] = c->b[5];
         memcpy(&vcb.batch[3], &c->f[0], sizeof(vcb.batch[3]));
     }
-    if (f->camera.freeCamera) {
-        /* photo mode: behind-eye triangles clipped, not dropped */
+    if (f->camera.freeCamera || rd_vr_active()) {
+        /* photo mode (and the VR fork's eyes): behind-eye triangles
+         * clipped, not dropped */
         vcb.draw[2] |= ICO_VU_BEHIND_EYE;
     }
     if (ico_region == ICO_REGION_JUN26) {

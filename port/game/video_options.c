@@ -877,11 +877,21 @@ void ico_video_set_window(int w, int h)
     s_winH = h > 0 ? h : 0;
 }
 
+static int s_vrFrame; /* VR fork: ico_video_vr_frame */
+
+void ico_video_vr_frame(int on)
+{
+    s_vrFrame = on;
+}
+
 float ico_video_aspect(void)
 {
     IcoVideoOptions o;
     float a;
 
+    if (s_vrFrame) {
+        return ASPECT_4_3;
+    }
     ico_video_get(&o);
     switch (o.aspect) {
     case ICO_ASPECT_16_10:

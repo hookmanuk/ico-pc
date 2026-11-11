@@ -77,6 +77,9 @@ SpriteVSOut sprite_vertex(SpriteVSIn i)
 {
     SpriteVSOut o;
     o.pos = float4(gs_xy_to_ndc(i.xy), gs_depth(i.z), 1.0);
+#ifdef ICO_VR
+    gs_eye_position(i.xy, i.z, o.pos); // VR fork: the frame camera's prims at the eye
+#endif
     o.col = float4(i.col);
     o.uv = gs_uv_norm(i.uv);
 #ifdef ICO_SPRITE_PLANES
@@ -184,12 +187,12 @@ SpriteVSOut sprite_world_vs(SpriteVSIn i)
     return sprite_vertex(i);
 }
 
-Texture2D<float4> g_texture : ICO_REG(t1, 2);
+ICO_T2D(float4) g_texture : ICO_REG(t1, 2);
 SamplerState g_sampler : ICO_REG(s1, 2);
 // The DATE snapshot: R8, 1.0 where the bound target's alpha MSB
 // was set, addressed in target pixels. Read only under DF_DATE; otherwise a
 // 1x1 dummy is bound and never fetched.
-Texture2D<float> g_dateSnap : ICO_REG(t2, 2);
+ICO_T2D(float) g_dateSnap : ICO_REG(t2, 2);
 
 // gs_bspline_bilinear4 with its weights and places from kSpriteBspline
 float4 sprite_bspline4(float2 tc, float2 size)
@@ -225,10 +228,10 @@ float4 sprite_bspline4(float2 tc, float2 size)
     const float2 h0 = float2(i0) - 1.0 + float2(wx.z, wy.z) + 0.5;
     const float2 h1 = float2(i0) + 1.0 + float2(wx.w, wy.w) + 0.5;
     const float2 inv = 1.0 / size;
-    return g0.y * (g0.x * g_texture.SampleLevel(g_sampler, float2(h0.x, h0.y) * inv, 0.0) +
-                   g1.x * g_texture.SampleLevel(g_sampler, float2(h1.x, h0.y) * inv, 0.0)) +
-           g1.y * (g0.x * g_texture.SampleLevel(g_sampler, float2(h0.x, h1.y) * inv, 0.0) +
-                   g1.x * g_texture.SampleLevel(g_sampler, float2(h1.x, h1.y) * inv, 0.0));
+    return g0.y * (g0.x * g_texture.SampleLevel(g_sampler, ICO_UV(float2(h0.x, h0.y) * inv), 0.0) +
+                   g1.x * g_texture.SampleLevel(g_sampler, ICO_UV(float2(h1.x, h0.y) * inv), 0.0)) +
+           g1.y * (g0.x * g_texture.SampleLevel(g_sampler, ICO_UV(float2(h0.x, h1.y) * inv), 0.0) +
+                   g1.x * g_texture.SampleLevel(g_sampler, ICO_UV(float2(h1.x, h1.y) * inv), 0.0));
 }
 
 // Above 1x (DF_ABOVE1X: a bilinear draw sampling a target at another scale
@@ -258,7 +261,7 @@ bool sprite_above1x(float2 uv, out uint4 t)
         return false;
     }
     uint w, h;
-    g_texture.GetDimensions(w, h);
+    ICO_DIMS(g_texture, w, h);
     const int2 size = max(int2(int(w), int(h)), int2(1, 1));
     const float2 tc = uv * float2(size);
     const uint steps = uint(g_scale.w);
@@ -312,7 +315,7 @@ uint4 sprite_fold(float2 uv, uint4 t)
 {
     const uint meta = g_aux1.x, alphas = g_aux1.y, bars = g_aux1.z;
     uint w, h;
-    g_texture.GetDimensions(w, h);
+    ICO_DIMS(g_texture, w, h);
     const float y = uv.y * float(h) - 0.5;
     const float y0 = floor(y);
     const int hi = max(int(h), 1) - 1;
@@ -323,8 +326,8 @@ uint4 sprite_fold(float2 uv, uint4 t)
     uint4 t1 = t;
     [branch] if (split) {
         const float ih = 1.0 / float(hi + 1);
-        const float4 s0 = g_texture.SampleLevel(g_sampler, float2(uv.x, (y0 + 0.5) * ih), 0.0);
-        const float4 s1 = g_texture.SampleLevel(g_sampler, float2(uv.x, (y0 + 1.5) * ih), 0.0);
+        const float4 s0 = g_texture.SampleLevel(g_sampler, ICO_UV(float2(uv.x, (y0 + 0.5) * ih)), 0.0);
+        const float4 s1 = g_texture.SampleLevel(g_sampler, ICO_UV(float2(uv.x, (y0 + 1.5) * ih)), 0.0);
         t = gs_texa_expand(uint4(floor(s0 * 255.0 + 0.5)), g_mode.y & 0xFFu, g_mode.y >> 8);
         t1 = gs_texa_expand(uint4(floor(s1 * 255.0 + 0.5)), g_mode.y & 0xFFu, g_mode.y >> 8);
     }
@@ -460,6 +463,9 @@ SpriteAa1VSOut sprite_aa1_vertex(SpriteAa1VSIn i)
 {
     SpriteAa1VSOut o;
     o.pos = float4(gs_xy_to_ndc(i.xy), gs_depth(i.z), 1.0);
+#ifdef ICO_VR
+    gs_eye_position(i.xy, i.z, o.pos); // VR fork: the frame camera's prims at the eye
+#endif
     o.col = float4(i.col);
     o.uv = gs_uv_norm(i.uv);
     o.cov = i.cov;
@@ -617,6 +623,13 @@ SpriteStqVSOut sprite_stq_vertex(SpriteStqVSIn i)
     o.pos = float4(gs_xy_to_ndc(i.xy), gs_depth(i.z), 1.0);
     o.col = float4(i.col);
     o.stq = gs_stq_norm(i.uv, i.q);
+#ifdef ICO_VR
+    // VR fork: at the eye, S, T and Q over the eye's w (the GS's screen-linear
+    // S / Q kept: the w cancels in the per-pixel divide)
+    if (gs_eye_position(i.xy, i.z, o.pos)) {
+        o.stq = o.stq / o.pos.w;
+    }
+#endif
 #ifdef ICO_SPRITE_PLANES
     o.p0 = o.p1 = o.p2 = o.p3 = o.p4 = o.p5 = float4(0.0, 0.0, 0.0, 0.0);
 #endif
@@ -675,7 +688,7 @@ struct DateSnapIn {
 
 float date_snap_ps(DateSnapIn i) : SV_Target0
 {
-    float a = g_texture.Load(int3(int2(i.pos.xy), 0)).a;
+    float a = g_texture.Load(ICO_LD(int2(i.pos.xy), 0)).a;
     return a * 255.0 >= 127.5 ? 1.0 : 0.0;
 }
 
@@ -716,7 +729,7 @@ void date_stencil_ps(DateSnapIn i)
 #ifdef DATE_LOCAL_READ
     float a = g_dateIn.SubpassLoad().a;
 #else
-    float a = g_texture.Load(int3(int2(i.pos.xy), 0)).a;
+    float a = g_texture.Load(ICO_LD(int2(i.pos.xy), 0)).a;
 #endif
     if (!(a * 255.0 >= 127.5)) {
         discard;

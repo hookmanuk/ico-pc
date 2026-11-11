@@ -93,6 +93,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include "rd_internal.h"
+#include "rd_vr.h"
 #include "rd_submit.h"
 #include "rd_fsr1.h"
 #include "rd_upscale_temporal.h"
@@ -190,6 +191,11 @@ bool rd__frame_cropped(void)
  * height, wExact / 384 (4:3 exactly at 512), with Full pixel on and off */
 static void outputBox(uint32_t outW, uint32_t outH, RhiRect *box)
 {
+    if (rd_vr_active()) {
+        /* VR fork: the eye's whole image is the frame (rd_vr.h) */
+        *box = (RhiRect){0, 0, outW, outH};
+        return;
+    }
     const float we = rd__frame_wexact();
     rd__present_box(outW, outH, we == (float)ICO_FRAME_BASE_W ? RD_ASPECT_43 : we / 384.0f, box);
 }
@@ -647,6 +653,12 @@ static RhiState *outStateOf(void)
  * swapchain drawn (headless, under ICO_VK_FAKE_TRANSFORM) */
 static void outFinish(RhiCommandList cl)
 {
+    if (rd_vr_active() && !s_window) {
+        /* VR fork: the eyes ready for the headset's copy (rd_vr.h) */
+        rd__transition(cl, g_rd.presentOut, &g_rd.presentOutState, RHI_STATE_COPY_SRC);
+        rd__vr_recorded(g_rd.presentOut, g_rd.presentOutState);
+        return;
+    }
     if (s_window) {
         if (s_turns) {
             rd__prerotate_record(cl, s_pic, s_picState, s_outW, s_outH, s_backbuffer,
@@ -667,9 +679,36 @@ bool rd__present_acquire(void)
     return ok;
 }
 
+/* VR fork (rd_vr.h): the picture into the headset's two-layer output, a
+ * ring slot of the eyes' size; no window image */
+static bool vrAcquire(void)
+{
+    s_backbuffer = (RhiTexture){0};
+    s_window = false;
+    s_turns = 0;
+    s_turnFailed = false;
+    uint32_t w = 0, h = 0;
+    rd_vr_eye_size(&w, &h);
+    if (!w || !h) {
+        return false;
+    }
+    RhiTextureDesc d = {w, h, 1, RHI_FMT_RGBA8_UNORM,
+                        RHI_TEX_RENDER_TARGET | RHI_TEX_SAMPLED | RHI_TEX_COPY_SRC, "rd vr eyes", 0};
+    g_rd.presentOut = rd__vr_output(&d, &g_rd.presentOutState);
+    g_rd.presentOutW = w;
+    g_rd.presentOutH = h;
+    s_outFormat = RHI_FMT_RGBA8_UNORM;
+    s_outW = w;
+    s_outH = h;
+    return g_rd.presentOut.id != 0;
+}
+
 static bool presentAcquire(void)
 {
     rd__submit_drain_acquire(); /* the last picture's present reads what this sets (rd_submit.h) */
+    if (rd_vr_active()) {
+        return vrAcquire();
+    }
     s_backbuffer = (RhiTexture){0};
     s_window = rhi_swapchain_format() != RHI_FMT_UNKNOWN;
     s_turns = 0;
@@ -2615,6 +2654,9 @@ void rd__present_finish(void)
     if (s_window && s_backbuffer.id) {
         rhi_present();
     }
+    if (rd_vr_active()) {
+        rd__vr_finished(); /* VR fork: the eyes to the headset (rd_vr.h) */
+    }
 }
 
 bool rd__present_will_show(void)
@@ -2624,6 +2666,11 @@ bool rd__present_will_show(void)
 
 void rd__present_shutdown(void)
 {
+    if (rd_vr_active()) {
+        /* VR fork: presentOut is a ring slot, rd_vr.c's */
+        g_rd.presentOut = (RhiTexture){0};
+        rd__vr_shutdown();
+    }
     rd__prerotate_shutdown();
     s_pic = (RhiTexture){0};
     s_picState = NULL;
