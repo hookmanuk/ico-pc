@@ -3120,6 +3120,7 @@ static void sheetParam(const RdTexRec *t, float param[4])
 /* VR fork: the screen command being drawn (doScreen, doScreenWrap), whose
  * kind fillDrawCB writes into DrawCB.vr (rd_vr.h) */
 static const RdCmd *s_vrScreenCmd;
+static const RdFrame *s_vrScreenFrame;
 static void fillDrawCB(const Replay *r, const RdDrawPass *dp, const DrawSetup *ds, IcoDrawCB *cb)
 {
     memset(cb, 0, sizeof(*cb));
@@ -3206,7 +3207,20 @@ static void fillDrawCB(const Replay *r, const RdDrawPass *dp, const DrawSetup *d
     }
     cb->mode[2] = dp->modeZ;
     cb->mode[3] = dp->aref;
-    cb->vr[0] = rd__vr_screen_kind(s_vrScreenCmd); /* VR fork (rd_vr.h) */
+    {
+        /* VR fork (rd_vr.h): the frame camera's prims at the eyes, the HUD on
+           its screen; a draw that reads the frame's own targets (a copy, a
+           fade over the picture, a filter) is the picture's, not the HUD's */
+        uint32_t k = rd__vr_screen_kind_in(s_vrScreenCmd, s_vrScreenFrame, rd__replay_list());
+        if (k == 2u) {
+            const RdTexRec *t =
+                ds->textured && r->st.ds.texEnabled ? rd__tex_rec(r->st.tex) : NULL;
+            if (ds->screenCopy || ds->texCrop || (t && t->kind == RD_TEXKIND_TARGET)) {
+                k = 0u;
+            }
+        }
+        cb->vr[0] = k;
+    }
     /* a pass the storage pass merge draws through the destination read
      * without GS blending: Cs (rd__dst_merge) */
     cb->blend[0] = dp->csOnly ? 0x00u : rd__alpha_register(r->st.ds.blend);
@@ -3534,9 +3548,12 @@ static void doScreenBody(Replay *r, const RdFrame *f, const RdCmd *c);
 static void doScreen(Replay *r, const RdFrame *f, const RdCmd *c)
 {
     const RdCmd *was = s_vrScreenCmd;
+    const RdFrame *wasF = s_vrScreenFrame;
     s_vrScreenCmd = c;
+    s_vrScreenFrame = f;
     doScreenBody(r, f, c);
     s_vrScreenCmd = was;
+    s_vrScreenFrame = wasF;
 }
 
 static void doScreenBody(Replay *r, const RdFrame *f, const RdCmd *c)
@@ -3896,6 +3913,7 @@ void rd__overlay_draw(RhiCommandList cl, RhiFormat fmt, RdUniform frame, uint8_t
         cb.tex[1] = (float)th;
         cb.tex[2] = 1.0f / (float)tw;
         cb.tex[3] = 1.0f / (float)th;
+        cb.vr[0] = rd__vr_hud_on() ? 2u : 0u; /* VR fork: the port's UI and the text on the HUD */
         if (dp[i].key.fs == RD_FS_FONT_SHEET) {
             sheetParam(rd__tex_rec(tex), cb.param);
         }
@@ -4080,9 +4098,12 @@ static void doScreenWrapBody(Replay *r, const RdFrame *f, const RdCmd *c);
 static void doScreenWrap(Replay *r, const RdFrame *f, const RdCmd *c)
 {
     const RdCmd *was = s_vrScreenCmd;
+    const RdFrame *wasF = s_vrScreenFrame;
     s_vrScreenCmd = c;
+    s_vrScreenFrame = f;
     doScreenWrapBody(r, f, c);
     s_vrScreenCmd = was;
+    s_vrScreenFrame = wasF;
 }
 
 static void doScreenWrapBody(Replay *r, const RdFrame *f, const RdCmd *c)

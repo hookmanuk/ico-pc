@@ -557,12 +557,7 @@ uint4 vu_rgba(float4 c)
 // eye's (port/render/rd_vr.h); itself outside the stereo mode
 float4 vu_eye_clip(float4 c)
 {
-#ifdef ICO_VR
-    if (g_vrMode.x != 0.0) {
-        return mul(g_vrClip[g_viewIndex], c);
-    }
-#endif
-    return c;
+    return c; // VR fork: the eyes' flags are vu_divide's (FrameCB.vrClip)
 }
 
 uint vu_clipw(float4 v)
@@ -652,6 +647,11 @@ float vu_divide(inout VuVtx o)
     // VR fork: the camera's screen to this eye's (port/render/rd_vr.h)
     if (g_vrMode.x != 0.0) {
         o.h = mul(g_vrScreen[g_viewIndex], o.h);
+        // the clip flags from the eye's own position (FrameCB.vrClip: the
+        // eye's GS screen to a clip space with a guard band about its frame
+        // and the camera's near and far): the scissor programs' rejects and
+        // cuts are this eye's
+        o.clipf = vu_clipw(mul(g_vrClip[g_viewIndex], o.h));
     }
 #endif
     float q = vu_rcp(o.h.w);

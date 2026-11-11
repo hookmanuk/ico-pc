@@ -107,13 +107,21 @@ void rd__vr_hand_over(RdVrFrame *out)
 
 /* the picture is flat: a movie, or the frame has no camera or draws no
    mesh, skinned or grid in the world's lists (0 .. 10) */
-static bool pictureFlat(void)
+static bool pictureFlatWhy(const char **why, uint32_t *frameNo)
 {
+    *frameNo = 0;
     if (g_rd.videoShown) {
+        *why = "a movie";
         return true;
     }
     const RdFrame *fr = rd__last_frame();
-    if (!fr || !fr->hasCamera) {
+    if (!fr) {
+        *why = "no frame";
+        return true;
+    }
+    *frameNo = fr->number;
+    if (!fr->hasCamera) {
+        *why = "no camera";
         return true;
     }
     for (int l = 0; l <= 10 && l < RD_LIST_COUNT; l++) {
@@ -121,11 +129,26 @@ static bool pictureFlat(void)
         for (uint32_t i = 0; i < cl->count; i++) {
             const uint8_t t = cl->cmds[i].type;
             if (t == RDC_MESH || t == RDC_SKINNED || t == RDC_GRID) {
+                *why = "the world";
                 return false;
             }
         }
     }
+    *why = "no mesh";
     return true;
+}
+
+static bool pictureFlat(void)
+{
+    static int s_last = -1;
+    const char *why = "";
+    uint32_t n = 0;
+    const bool flat = pictureFlatWhy(&why, &n);
+    if ((int)flat != s_last) {
+        rd__log("VR: picture %s from frame %u (%s)", flat ? "flat" : "the eyes'", (unsigned)n, why);
+        s_last = flat;
+    }
+    return flat;
 }
 
 void rd__vr_picture_begin(const RdVrFrame *f)
@@ -273,6 +296,8 @@ static void eyeScreen(const float *tan, const double *S, double *o)
     o[14] = S[14];
 }
 
+static void hudMatrices(IcoFrameCB *cb);
+
 void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world)
 {
     double id[16];
@@ -283,6 +308,7 @@ void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world)
         toFloat(id, cb->vrHud[v]);
     }
     cb->vrMode[0] = cb->vrMode[1] = cb->vrMode[2] = cb->vrMode[3] = 0.0f;
+    hudMatrices(cb);
     {
         /* development: ICO_VR_TEST_TINT=1 tints the right eye in the
            present's blit (blit.hlsl), a check of the view index */
@@ -362,14 +388,110 @@ void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world)
             cb->vrMode[1] = S[0] != 0.0 ? (float)(Se[0] / S[0]) : 1.0f;
             cb->vrMode[2] = S[5] != 0.0 ? (float)(Se[5] / S[5]) : 1.0f;
         }
-        if (clip) {
-            double Dc[16];
-            mul4(G, D, Dc);
-            mul4(Dc, Gi, Dc);
-            toFloat(Dc, cb->vrClip[v]);
+        {
+            /* vrClip: the eye's GS screen (X, Y, Z, W: Z = zf + zn z,
+               W = z) to clip space: x, y over a guard band of 2048 GS pixels
+               about the frame's middle, z the game's own (n, f: the
+               camera's near and far), w = W */
+            const double g = 2048.0, zn = S[10], zf = S[14];
+            const double n = cam->nearZ > 0.0f ? (double)cam->nearZ : 2.0;
+            const double fa = cam->farZ > n ? (double)cam->farZ : 262144.0;
+            const double A = (fa + n) / (fa - n), B = -2.0 * fa * n / (fa - n);
+            double C[16];
+            memset(C, 0, sizeof(C));
+            C[0] = 1.0 / g;
+            C[12] = -2048.0 / g;
+            C[5] = 1.0 / g;
+            C[13] = -2048.0 / g;
+            if (zf != 0.0) {
+                C[10] = B / zf;
+                C[14] = A - B * zn / zf;
+            }
+            C[15] = 1.0;
+            toFloat(C, cb->vrClip[v]);
         }
+        (void)clip;
+        (void)G;
+        (void)Gi;
     }
     cb->vrMode[0] = 1.0f;
+}
+
+/* the flat HUD's screen: 2 m wide (4:3), 2 m before the seat, level */
+#define HUD_WIDTH_M 2.0
+#define HUD_DIST_M 2.0
+
+/* FrameCB.vrHud: the target's frame uv (0..1 across and down) to eye v's
+   uv, homogeneous (w the eye's depth): the screen's point in the seat's
+   view space (game units, y down, z forward) through E(v), then the eye's
+   frustum as uv: u' = (x / z - l) / (r - l), v' = (y / z + up) / (up - down) */
+static void hudMatrices(IcoFrameCB *cb)
+{
+    const RdVrFrame *f = &s_vr.cur;
+    if (!s_vr.on || !f->valid || f->flat) {
+        return;
+    }
+    const double s = (double)s_vr.unitsPerMetre;
+    const double hw = 0.5 * HUD_WIDTH_M * s, hh = hw * 0.75, dist = HUD_DIST_M * s;
+    double Q[16];
+    memset(Q, 0, sizeof(Q));
+    Q[0] = 2.0 * hw;
+    Q[5] = 2.0 * hh;
+    Q[12] = -hw;
+    Q[13] = -hh;
+    Q[14] = dist;
+    Q[15] = 1.0;
+    for (int v = 0; v < 2; v++) {
+        const double l = f->tan[v][0], r = f->tan[v][1], u = f->tan[v][2], d = f->tan[v][3];
+        double M[16], E[16], H[16];
+        memset(M, 0, sizeof(M));
+        M[0] = 1.0 / (r - l);
+        M[8] = -l / (r - l);
+        M[5] = 1.0 / (u - d);
+        M[9] = u / (u - d);
+        M[11] = 1.0;
+        eyeFromCamera(f->eye[v], s, E);
+        mul4(M, E, H);
+        mul4(H, Q, H);
+        toFloat(H, cb->vrHud[v]);
+    }
+}
+
+uint32_t rd__vr_screen_kind_in(const void *cmd, const void *frame, int list)
+{
+    const uint32_t k = rd__vr_screen_kind(cmd);
+    const RdCmd *c = cmd;
+    const RdFrame *fr = frame;
+    if (k != 0 || !s_vr.on || !c || !fr || c->type != RDC_SCREEN || !s_vr.cur.valid ||
+        s_vr.cur.flat || list < 11) {
+        return k;
+    }
+    if (c->b[3] != 0) {
+        return 2u; /* text */
+    }
+    /* the draw's box against the frame (512 x 448 GS pixels about 2048):
+       nearly all of it is a fade, a tint or the noise, the eye's whole
+       picture; anything less is the HUD */
+    const RdScreenVtx *v = (const RdScreenVtx *)(fr->payload + c->u[0]);
+    const uint32_t n = c->u[1];
+    if (!n) {
+        return 0;
+    }
+    int32_t x0 = v[0].x, x1 = v[0].x, y0 = v[0].y, y1 = v[0].y;
+    for (uint32_t i = 1; i < n; i++) {
+        x0 = v[i].x < x0 ? v[i].x : x0;
+        x1 = v[i].x > x1 ? v[i].x : x1;
+        y0 = v[i].y < y0 ? v[i].y : y0;
+        y1 = v[i].y > y1 ? v[i].y : y1;
+    }
+    const double w = (double)(x1 - x0) / 16.0, h = (double)(y1 - y0) / 16.0;
+    const double fh = (double)(g_rd.gsH ? g_rd.gsH : 448u);
+    return w * h >= 0.85 * 512.0 * fh ? 0u : 2u;
+}
+
+bool rd__vr_hud_on(void)
+{
+    return s_vr.on && s_vr.cur.valid && !s_vr.cur.flat;
 }
 
 uint32_t rd__vr_screen_kind(const void *cmd)

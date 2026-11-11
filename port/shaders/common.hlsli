@@ -1194,7 +1194,19 @@ float4 gs_homogeneous_position(float4 h)
 // untouched) for every other prim
 bool gs_eye_position(uint2 xy, uint z, inout float4 pos)
 {
-    if (g_vr.x == 0u || g_vrMode.x == 0.0) {
+    if (g_vr.x == 2u) {
+        // the flat HUD's draw (DrawCB.vr.x 2): its place in the target's frame
+        // onto the screen before the seat, seen from this eye (FrameCB.vrHud:
+        // the frame's uv to the eye's uv, homogeneous), its own GS Z kept
+        float2 px = float2(xy) * (1.0 / 16.0);
+        float2 uv = (px - g_origin.xy) * g_target.zw;
+        float4 h = mul(g_vrHud[g_viewIndex], float4(uv, 0.0, 1.0));
+        float4 hp = float4(g_origin.xy * h.w + h.xy * g_target.xy, float(z) * (1.0 / 16.0) * h.w,
+                           h.w);
+        pos = gs_homogeneous_position(hp);
+        return true;
+    }
+    if (g_vr.x != 1u || g_vrMode.x == 0.0) {
         return false;
     }
     float4 h = mul(g_vrScreen[g_viewIndex],

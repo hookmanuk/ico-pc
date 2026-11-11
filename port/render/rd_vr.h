@@ -87,6 +87,12 @@ void rd__vr_finished(void);
 void rd__vr_shutdown(void);
 /* the screen command c's kind for DrawCB.vr.x: 1 a prim the frame camera
  * projected (rd_interp.c frameProjected's test), else 0 */
+/* 2 for a draw of the flat HUD (list 11 or 12, not the camera's, not over
+ * the whole frame, or text), drawn on the screen before the seat
+ * (FrameCB.vrHud); frame the RdFrame (its payload), list the draw's */
 uint32_t rd__vr_screen_kind(const void *cmd); /* a const RdCmd * */
+uint32_t rd__vr_screen_kind_in(const void *cmd, const void *frame, int list);
+/* the picture draws its 2D on the HUD (VR on, the eyes' picture, not flat) */
+bool rd__vr_hud_on(void);
 
 #endif

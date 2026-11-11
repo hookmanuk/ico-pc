@@ -1970,7 +1970,10 @@ static void drawBatchesAt(RhiCommandList cl, RhiTexture out, RhiFormat fmt, uint
     for (uint32_t i = from; i < to; i++) {
         const OverlayBatch *b = &s_ov.buf.b[i];
         /* the deferred text's batches carry their regions */
-        if (memcmp(&b->sc, &cur, sizeof(cur)) != 0) {
+        if (rd__vr_hud_on()) {
+            /* VR fork: the batches are moved onto the HUD (rd_vr.h): their
+               regions, the output's places, would cut them */
+        } else if (memcmp(&b->sc, &cur, sizeof(cur)) != 0) {
             cur = b->sc;
             if (dst) {
                 const RhiRect sc = scaleRect(cur, dst, ow, oh);

@@ -473,6 +473,15 @@ static int reg_clipPacketBoundingBox(PacHeader *pk)
     if (debug_bounding_flag & 2) {
         reg_dispBoxLine(pk);
     }
+#ifdef ICO_RD
+    /* VR fork: every packet through the program that clips (2: the
+       scissor code): the eyes' frames are not the camera's, so the region
+       test's GS window (and a part wholly inside the camera's picture)
+       says nothing of what an eye sees (port/render/rd_vr.h) */
+    if (rd_vr_wide_cull()) {
+        ret = 2;
+    }
+#endif
     return ret;
 }
 
