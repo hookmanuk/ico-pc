@@ -14,10 +14,17 @@ settings in the game's own folder.
 
 **To play in VR**
 
-1. Unzip it and set up your disc image as in [Install](#install) below.
-   Starting `x64\ico_pc_x64.exe` once does that, and plays the flat game.
+1. Unzip it.
 2. Start your headset's OpenXR runtime. SteamVR is the one it was tested on.
 3. Double-click `ico_vr.cmd`, in the unzipped folder beside this README.
+
+**Your disc image.** The game is not in the download: you need your own
+disc image of ICO, one file ending in `.iso`, `.chd` or `.bin` (the discs
+that work are in [The seven discs](#the-seven-discs) below). The first time
+you start it, from `ico_vr.cmd` or as the flat game, a window on the desktop
+asks for that file. Pick it, and the game copies what it needs from it once
+and starts; it does not ask again. There is nothing to set up before the
+first start.
 
 You play seated, with a gamepad or the keyboard, as in the flat game. Motion
 controllers are not used. **F8** puts the view straight ahead of you again,
@@ -57,8 +64,6 @@ and so does SteamVR's "Reset seated position".
 
 **Known problems**
 
-- Now and then one of the game's cameras stands close behind a wall, and
-  you have to lean forward to see past it.
 - The VR mode is Windows only. The other platforms' builds are not part of
   this fork's releases.
 
