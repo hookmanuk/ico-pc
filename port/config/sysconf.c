@@ -261,6 +261,16 @@ int ico_boot_video_mode(void)
         }
         return 0;
     }
+    {
+        /* VR fork: 60 Hz in VR (ICO_VR=1 or [vr] enabled), whatever the
+           setting says: the headset's pictures are drawn between the game's
+           ticks at its own rate, and 60 Hz is 30 ticks a second against
+           PAL's 25; the Video mode row is hidden there (settings.c) */
+        const char *vr = getenv("ICO_VR");
+        if ((vr && vr[0] == '1') || ico_config_get_bool("vr.enabled", 0)) {
+            return 0;
+        }
+    }
     v = ico_sysconf_video_mode();
     return v >= 0 ? v : 0;
 }

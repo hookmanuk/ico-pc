@@ -2099,6 +2099,7 @@ static int vrHiddenOpt(int opt)
     case UI_OPT_ASPECT:
     case UI_OPT_VSYNC:
     case UI_OPT_FRAMERATE:
+    case UI_OPT_VIDEO_MODE: /* 60 Hz in VR (sysconf.c ico_boot_video_mode) */
     case UI_OPT_ANTI_ALIAS:
     case UI_OPT_DOWNSAMPLE:
     case UI_OPT_UPSCALE:
@@ -2551,7 +2552,7 @@ void ui_settings_step(UiSettingsOpt opt, int dir)
         break;
     }
     case UI_OPT_VR_RENDER_SCALE: {
-        /* VR fork: 100 .. 200 % in tens, held at both ends */
+        /* VR fork: 50 .. 200 % in tens, held at both ends */
         const int v =
             ico_video_vr_render_scale_clamp(o.vrRenderScale + dir * ICO_VR_RENDER_SCALE_STEP);
         if (v == o.vrRenderScale) {

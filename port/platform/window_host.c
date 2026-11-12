@@ -483,9 +483,9 @@ static void video_settings(RdSettings *rs, int w, int h)
         ico_video_set_vr(1); /* the Options menu's VR rows (video_options.h) */
         rs->outputWidth = ew;
         rs->outputHeight = eh;
-        /* Display > VR resolution, 100 to 200 %: the scene at its percent
-           of the eyes', box-reduced to their size above 100 % by the
-           present (rd_present.c); no upscaler in VR */
+        /* Display > VR resolution, 50 to 200 %: the scene at its percent
+           of the eyes', stretched to their size below 100 % and box-reduced
+           above it by the present (rd_present.c); no upscaler in VR */
         const uint32_t pct = (uint32_t)ico_video_vr_render_scale();
         rs->sceneWidth = (ew * pct + 50u) / 100u;
         rs->sceneHeight = (eh * pct + 50u) / 100u;
