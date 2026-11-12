@@ -161,6 +161,7 @@
 #include <string.h>
 #include "rd_camera_blend.h"
 #include "rd_internal.h"
+#include "rd_vr.h"
 #include "rd_layer.h"
 #include "rd_mesh.h"
 #include "rd_upscale.h"
@@ -6076,7 +6077,10 @@ const RdFrame *rd__interp_frame(const RdFrame *prev, const RdFrame *cur, float a
     st.camOffWhy = blend ? s_camOff : RD_CAM_OFF_NONE;
     /* the still re-present's hash: before the head copies, which differ
      * between a tick's first present and the later ones */
-    s_hashOk = !(blend && s_cam.on && !s_cam.still) && !g_rd.settings.motionBlurSmooth;
+    /* VR fork (rd_vr.h): never in VR, where every present has its own head
+       pose (a re-shown picture is the last pose's) */
+    s_hashOk = !(blend && s_cam.on && !s_cam.still) && !g_rd.settings.motionBlurSmooth &&
+               !rd_vr_active();
     s_hash = s_hashOk ? outHash() : 0;
     feedback(firstOfTick);
     /* the glow kept from the tick's first present (rd_glow_hold.c): after

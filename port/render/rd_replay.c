@@ -732,11 +732,22 @@ void rd__bind_epoch_next(void)
 /* FNV-1a over a uniform block's bytes */
 static uint32_t hashBytes(const void *p, uint32_t n, uint32_t h)
 {
+    /* eight bytes a step (the blocks are multiples of 16): a byte at a time
+       was a serial chain of 160 multiplies a DrawCB, every draw */
     const uint8_t *b = p;
-    for (uint32_t i = 0; i < n; i++) {
-        h = (h ^ b[i]) * 16777619u;
+    uint64_t x = h;
+    uint32_t i = 0;
+    for (; i + 8 <= n; i += 8) {
+        uint64_t w;
+        memcpy(&w, b + i, 8);
+        x = (x ^ w) * 0x100000001B3ull;
+        x ^= x >> 29;
     }
-    return h;
+    for (; i < n; i++) {
+        x = (x ^ b[i]) * 0x100000001B3ull;
+    }
+    x ^= x >> 32;
+    return (uint32_t)x;
 }
 
 /* The uniform layouts' groups.  FrameCB, DrawCB, VuCB and
