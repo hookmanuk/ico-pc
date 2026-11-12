@@ -1,5 +1,6 @@
 /* rd_vr.c: the VR fork's renderer side (rd_vr.h). */
 #include "rd_vr.h"
+#include <SDL3/SDL_timer.h>
 #include "rd_internal.h"
 #include "ico_thread.h"
 #include "../rhi/rhi_vr.h"
@@ -141,6 +142,28 @@ static bool pictureFlatWhy(const char **why, uint32_t *frameNo)
 }
 
 static uint32_t s_dbgTwo, s_dbgMixed;
+/* the render thread's time a picture (rd__vr_picture_begin to
+ * rd__vr_recorded), by whether the picture is the first of a new game frame */
+static uint32_t s_picFrameNo, s_picNew;
+static uint64_t s_picAt;
+static double s_picMs[2][1024];
+static uint32_t s_picN[2];
+
+static double picP99(double *v, uint32_t n, double *mx)
+{
+    *mx = 0.0;
+    for (uint32_t i = 1; i < n; i++) {
+        const double x = v[i];
+        uint32_t j = i;
+        while (j > 0 && v[j - 1] > x) {
+            v[j] = v[j - 1];
+            j--;
+        }
+        v[j] = x;
+    }
+    *mx = n ? v[n - 1] : 0.0;
+    return n ? v[n * 99 / 100] : 0.0;
+}
 /* development: ICO_VR_SHADOW_ONESIDED=1, or a file "onesided" in
  * ICO_VR_DUMP_DIR (checked every 32 pictures): the camera's inc/dec split */
 static int s_shadowOneSided;
@@ -176,6 +199,9 @@ static bool pictureFlat(void)
     const char *why = "";
     uint32_t n = 0;
     const bool flat = pictureFlatWhy(&why, &n);
+    s_picNew = n != s_picFrameNo;
+    s_picFrameNo = n;
+    s_picAt = SDL_GetTicksNS();
     if ((int)flat != s_last) {
         rd__log("VR: picture %s from frame %u (%s)", flat ? "flat" : "the eyes'", (unsigned)n, why);
         s_last = flat;
@@ -191,6 +217,13 @@ void rd__vr_picture_begin(const RdVrFrame *f)
                 s_dbgPic, s_dbgPicMiss, s_dbgGrid[1], s_dbgGrid[2], s_dbgGrid[3], s_dbgGrid[4], s_dbgShift,
                 s_dbgTwo, s_dbgMixed);
         s_dbgTwo = s_dbgMixed = 0;
+        double m0, m1;
+        const uint32_t n0 = s_picN[0], n1 = s_picN[1];
+        const double p0 = picP99(s_picMs[0], n0, &m0), p1 = picP99(s_picMs[1], n1, &m1);
+        rd__log("VR: render thread a picture: interpolated %u p99 %.2f max %.2f ms; a new game frame's %u "
+                "p99 %.2f max %.2f ms",
+                n0, p0, m0, n1, p1, m1);
+        s_picN[0] = s_picN[1] = 0;
         s_dbgPic = s_dbgPicMiss = s_dbgShift = 0;
         memset(s_dbgGrid, 0, sizeof(s_dbgGrid));
     }
@@ -706,6 +739,9 @@ RhiTexture rd__vr_output(RhiTextureDesc *desc, RhiState *state)
 
 void rd__vr_recorded(RhiTexture out, RhiState state)
 {
+    if (s_picAt && s_picN[s_picNew] < 1024u) {
+        s_picMs[s_picNew][s_picN[s_picNew]++] = (double)(SDL_GetTicksNS() - s_picAt) / 1e6;
+    }
     if (s_vr.ring[s_ringCur].id == out.id) {
         s_vr.ringState[s_ringCur] = state;
     }
