@@ -2695,6 +2695,10 @@ static bool vkr_create_device(void)
                 .occlusionQueryPrecise = g_vkr.occPrecise ? VK_TRUE : VK_FALSE,
                 .textureCompressionBC = g_vkr.bc ? VK_TRUE : VK_FALSE,
                 .sampleRateShading = g_vkr.sampleRate ? VK_TRUE : VK_FALSE,
+                /* VR fork: the MSAA shaders read multisampled two-layer
+                 * images in the stereo mode (ImageMSArray) */
+                .shaderStorageImageMultisample =
+                    vkr_vr_stereo_asked() ? avail.shaderStorageImageMultisample : VK_FALSE,
                 /* a fragment shader storing to an image (the interlock's
                  * destination read) */
                 .fragmentStoresAndAtomics = g_vkr.interlock ? VK_TRUE : VK_FALSE,
@@ -2749,6 +2753,7 @@ static bool vkr_create_device(void)
             qMultiview.pNext = f2.pNext;
             f2.pNext = &qMultiview;
             g_vkr.stereo = true;
+            g_vkr.stereoMsaa = avail.shaderStorageImageMultisample == VK_TRUE;
             VKR_LOG("VR: stereo mode: multiview on (every texture two layers)");
         } else {
             VKR_LOG("VR: stereo mode refused: %s",
@@ -3224,20 +3229,23 @@ static void vkr_fill_limits(void)
      * shaders sample every texture as a two-layer array by the view index:
      * no path that writes or reads images outside a pass (the destination
      * read's storage images, the interlock and ROV, the VU record's stores),
-     * no multisampled targets (their shaders read Texture2DMS) and no
-     * attachment local read */
+     * no attachment local read; multisampled targets only where the MSAA
+     * shaders can read them as two-layer arrays (stereoMsaa) */
     if (g_vkr.stereo) {
         o->fragmentInterlock = false;
         o->rov = false;
         o->rasterOrderAttachment = false;
         o->vertexStores = false;
         o->computeStores = false;
-        o->msaaCounts = 1u;
-        o->sampleRateShading = false;
+        if (!g_vkr.stereoMsaa) {
+            o->msaaCounts = 1u;
+            o->sampleRateShading = false;
+        }
         o->localRead = false;
         o->storePassTarget = false;
-        VKR_LOG("VR: stereo mode: destination reads, interlock, VU stores, MSAA and local read "
-                "off");
+        VKR_LOG("VR: stereo mode: destination reads, interlock, VU stores and local read off; "
+                "MSAA %s",
+                g_vkr.stereoMsaa ? "offered" : "off (no shaderStorageImageMultisample)");
     }
 }
 

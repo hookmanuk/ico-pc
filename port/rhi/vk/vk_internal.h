@@ -507,6 +507,10 @@ typedef struct VkrState {
      * every multisampled format takes, and the feature enabled */
     uint32_t msaaCounts;
     bool sampleRate;
+    /* VR fork: shaderStorageImageMultisample is enabled, which a shader
+       reading a multisampled two-layer image needs (SPIR-V ImageMSArray):
+       MSAA stays offered in the stereo mode */
+    bool stereoMsaa;
     /* the destination read (RhiLimits.fragmentInterlock,
      * rasterOrderAttachment): the features enabled */
     bool interlock;
@@ -1165,6 +1169,8 @@ bool vkr_frames_init(void);
 bool vkr_submit_present_signal(VkrFrame *f);
 void vkr_frames_shutdown(void);
 VkrCmdList *vkr_get_cmd(RhiCommandList cl);
+/* VR fork: vk_cmd.c, the pending barriers before an outside transfer reads src */
+void vkr_vr_before_read(VkrCmdList *c, VkrTexture *src);
 void vkr_image_barrier(VkrCmdList *c, VkrTexture *t, RhiState before, RhiState after);
 /* vk_present_mode.c: the present mode for a swapchain from the surface's
  * modes[n]: FIFO when forceFifo (the FIFO fallback, rhi_present_fifo_fallback);

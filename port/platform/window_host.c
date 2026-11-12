@@ -494,7 +494,13 @@ static void video_settings(RdSettings *rs, int w, int h)
         rs->fullHeightScene = 1;
         rs->fullPixel = 1;
         rs->borderMask = 0;
-        rs->antiAlias = 0;
+        /* Picture > Anti-aliasing: MSAA as chosen, whatever the hidden
+           Preset row says; supersampling is the VR resolution row's (above
+           100 %), so a saved SSAA choice draws as Off in VR */
+        rs->antiAlias = (uint8_t)(rd_aa_samples(o.antiAlias) > 1u ? o.antiAlias : ICO_AA_OFF);
+        if (rs->antiAlias != ICO_AA_OFF) {
+            rs->preset = RD_PRESET_ENHANCED; /* the renderer draws no AA under Original */
+        }
         rs->downsample = 0;
         rs->upscale = RD_UPSCALE_OFF;
         rd_crt_settings(rs, RD_CRT_OFF, 0.0f);

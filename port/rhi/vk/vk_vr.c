@@ -482,6 +482,9 @@ void rhi_vr_mirror_blit(RhiCommandList cl, RhiTexture src, RhiTexture dst)
     if (!c || !s || !d || c->inPass || !d->width || !d->height) {
         return;
     }
+    /* the pending barriers first: src's move to TRANSFER_SRC_OPTIMAL is
+       among them (the blit read it in its attachment layout before) */
+    vkr_vr_before_read(c, s);
     imageBarrierLayers(c->cb, d->image, 1, VK_IMAGE_LAYOUT_UNDEFINED,
                        VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 0, VK_ACCESS_TRANSFER_WRITE_BIT,
                        VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT);

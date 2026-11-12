@@ -1469,6 +1469,14 @@ static void vkr_hz_copy(VkrCmdList *c, VkrTexture *srcTex, VkrBuffer *srcBuf, Vk
     }
 }
 
+/* VR fork (vk_vr.c rhi_vr_mirror_blit): the list's pending barriers
+ * recorded before a transfer that reads src and is recorded outside this
+ * file (src's move to its copy-source layout among them) */
+void vkr_vr_before_read(VkrCmdList *c, VkrTexture *src)
+{
+    vkr_hz_copy(c, src, NULL, NULL, 0, NULL);
+}
+
 /* ------------------------------------------------------------ render passes */
 /* A render area must lie within every attachment (VkRenderingInfo,
  * VUID-VkRenderingInfo-pNext-06079/06080): one that does not is drawn over

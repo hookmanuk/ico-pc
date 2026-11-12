@@ -236,9 +236,9 @@ float4 aa_reduce_ps(BlitVSOut i) : SV_Target0
 // depth_upsample_ps: the other way, the single-sampled depth (t1) into
 // every sample of the multisampled one, when an epoch starts on a scene
 // that already holds a picture.
-Texture2DMS<float> g_msDepth : ICO_REG(t1, 2);
-Texture2DMS<float4> g_msColor : ICO_REG(t1, 2);
-Texture2DMS<float> g_msColorDepth : ICO_REG(t2, 2);
+ICO_T2DMS(float) g_msDepth : ICO_REG(t1, 2);
+ICO_T2DMS(float4) g_msColor : ICO_REG(t1, 2);
+ICO_T2DMS(float) g_msColorDepth : ICO_REG(t2, 2);
 
 float depth_resolve_ps(BlitVSOut i) : SV_Depth
 {
@@ -246,7 +246,7 @@ float depth_resolve_ps(BlitVSOut i) : SV_Depth
     const int2 p = int2(i.pos.xy);
     float d = 1.0;
     for (uint s = 0u; s < n; s++) {
-        d = min(d, g_msDepth.Load(p, int(s)));
+        d = min(d, g_msDepth.Load(ICO_MSLD(p), int(s)));
     }
     return d;
 }
@@ -267,8 +267,8 @@ MsaaResolveOut msaa_resolve_ps(BlitVSOut i)
     uint cr = 0u, cg = 0u, cb = 0u, ca = 0u, k = 0u;
     float dAll = 1.0, dCov = 1.0;
     for (uint s = 0u; s < n; s++) {
-        const float4 c = g_msColor.Load(p, int(s));
-        const float d = g_msColorDepth.Load(p, int(s));
+        const float4 c = g_msColor.Load(ICO_MSLD(p), int(s));
+        const float d = g_msColorDepth.Load(ICO_MSLD(p), int(s));
         const uint r = uint(floor(c.x * 255.0 + 0.5));
         const uint g = uint(floor(c.y * 255.0 + 0.5));
         const uint b = uint(floor(c.z * 255.0 + 0.5));
