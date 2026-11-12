@@ -82,6 +82,7 @@
 #include "rd_vu_record.h"
 #include "rd_vu_rec_sink.h"
 #include "rd_vu_skin_check.h"
+#include "rd_vr.h"
 #include "shader_consts.h"
 #include "shaders_gen.h"
 
@@ -713,6 +714,20 @@ static void shadowStencil(uint8_t mode, RhiDepthStencilState *ds)
         ds->stencilReadMask = 0xFF;
         ds->stencilWriteMask = RD_SHADOW_STENCIL_MASK;
         break;
+    case RD_STENCIL_TWO_SIDED_POS:
+    case RD_STENCIL_TWO_SIDED_NEG: {
+        /* VR fork: Vulkan's VK_FRONT_FACE_CLOCKWISE on a Y down framebuffer:
+         * front is a positive GS cross product */
+        RhiStencilFace b = f;
+        f.pass = mode == RD_STENCIL_TWO_SIDED_POS ? RHI_SO_INCR_WRAP : RHI_SO_DECR_WRAP;
+        b.pass = mode == RD_STENCIL_TWO_SIDED_POS ? RHI_SO_DECR_WRAP : RHI_SO_INCR_WRAP;
+        ds->stencilReadMask = 0xFF;
+        ds->stencilWriteMask = RD_SHADOW_STENCIL_MASK;
+        ds->stencilTest = true;
+        ds->front = f;
+        ds->back = b;
+        return;
+    }
     case RD_STENCIL_TEST_NONZERO:
     case RD_STENCIL_TEST_NONZERO5:
         f.compare = RHI_CMP_NOTEQUAL;
@@ -3890,6 +3905,7 @@ RdKeyFamily rd__pipe_key_family(const RdPipeKeyInt *k)
         break;
     }
     if (k->gs.stencil == RD_STENCIL_INCR || k->gs.stencil == RD_STENCIL_DECR ||
+        k->gs.stencil == RD_STENCIL_TWO_SIDED_POS || k->gs.stencil == RD_STENCIL_TWO_SIDED_NEG ||
         k->gs.stencil == RD_STENCIL_TEST_NONZERO || k->gs.stencil == RD_STENCIL_TEST_NONZERO5) {
         return RD_KF_SHADOW;
     }
@@ -4359,6 +4375,12 @@ uint32_t rd__enumerate_reachable_shadow(RdPipeKeyInt *out, uint32_t max, uint32_
     for (int decr = 0; decr < 2; decr++) {
         const RdPipeKeyInt k = rd__shadow_volume_key(&s, RHI_FMT_RGBA8_UNORM, decr);
         n = rd__add_pipe_key(out, max, n, &k);
+    }
+    if (rd_vr_active()) {
+        /* VR fork: the eyes' two-sided count (rd_vr.c rd__vr_shadow_stencil) */
+        RdPipeKeyInt k2 = rd__shadow_volume_key(&s, RHI_FMT_RGBA8_UNORM, 0);
+        k2.gs.stencil = RD_STENCIL_TWO_SIDED_POS;
+        n = rd__add_pipe_key(out, max, n, &k2);
     }
     for (int p = 0; p < RD_SHADOW_RESOLVE_PASSES; p++) {
         const RdPipeKeyInt k = rd__shadow_resolve_key(p, 4);

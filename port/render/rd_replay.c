@@ -4530,7 +4530,11 @@ static void doShadowStripIn(Replay *r, const RdFrame *f, const RdCmd *c)
         if (count[decr] == 0) {
             continue;
         }
-        const RdPipeKeyInt k = rd__shadow_volume_key(&r->st, ds.tc->format, decr);
+        RdPipeKeyInt k = rd__shadow_volume_key(&r->st, ds.tc->format, decr);
+        /* VR fork (rd_vr.h): each eye counts by its own winding */
+        k.gs.stencil = (uint8_t)rd__vr_shadow_stencil(
+            cb.vr[0], g_rd.ringMap[s_slot] + vOff + (uint64_t)first * sizeof(IcoSpriteVertex),
+            count[decr], decr, k.gs.stencil);
         RhiPipeline p = rd__get_pipeline(&k);
         if (p.id) {
             rd__set_pipeline(s_cl, p, &k);

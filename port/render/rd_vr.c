@@ -4,6 +4,7 @@
 #include "ico_thread.h"
 #include "../rhi/rhi_vr.h"
 #include <math.h>
+#include <stdio.h>
 #include <stddef.h>
 #include <stdlib.h>
 #include <string.h>
@@ -139,6 +140,34 @@ static bool pictureFlatWhy(const char **why, uint32_t *frameNo)
     return true;
 }
 
+static uint32_t s_dbgTwo, s_dbgMixed;
+/* development: ICO_VR_SHADOW_ONESIDED=1, or a file "onesided" in
+ * ICO_VR_DUMP_DIR (checked every 32 pictures): the camera's inc/dec split */
+static int s_shadowOneSided;
+
+static void shadowSwitch(void)
+{
+    static uint32_t s_n;
+    if (s_n++ % 32u != 0u) {
+        return;
+    }
+    const char *e = getenv("ICO_VR_SHADOW_ONESIDED");
+    int on = e && e[0] == '1';
+    const char *d = getenv("ICO_VR_DUMP_DIR");
+    if (!on && d && d[0]) {
+        char path[1024];
+        snprintf(path, sizeof(path), "%s/onesided", d);
+        FILE *fp = fopen(path, "rb");
+        if (fp) {
+            fclose(fp);
+            on = 1;
+        }
+    }
+    if (on != s_shadowOneSided) {
+        rd__log("VR: shadow volumes %s", on ? "one-sided (the camera's split)" : "two-sided (each eye's winding)");
+    }
+    s_shadowOneSided = on;
+}
 static uint32_t s_dbgPic, s_dbgPicMiss, s_dbgGrid[RD_GRID_ST_COUNT], s_dbgShift, s_dbgFrames;
 
 static bool pictureFlat(void)
@@ -158,11 +187,14 @@ void rd__vr_picture_begin(const RdVrFrame *f)
 {
     if (++s_dbgFrames % 900u == 0u) {
         rd__log("VR: water: reflection draws %u (no camera %u), grids surface %u reflect %u ripple %u/%u, "
-                "shifted screen draws %u",
-                s_dbgPic, s_dbgPicMiss, s_dbgGrid[1], s_dbgGrid[2], s_dbgGrid[3], s_dbgGrid[4], s_dbgShift);
+                "shifted screen draws %u; shadow lists two-sided %u, triangles reordered %u",
+                s_dbgPic, s_dbgPicMiss, s_dbgGrid[1], s_dbgGrid[2], s_dbgGrid[3], s_dbgGrid[4], s_dbgShift,
+                s_dbgTwo, s_dbgMixed);
+        s_dbgTwo = s_dbgMixed = 0;
         s_dbgPic = s_dbgPicMiss = s_dbgShift = 0;
         memset(s_dbgGrid, 0, sizeof(s_dbgGrid));
     }
+    shadowSwitch();
     s_vr.cur = *f;
     s_vr.cur.flat = s_vr.on && pictureFlat() ? 1u : 0u;
     if (s_vr.cur.flat) {
@@ -391,6 +423,27 @@ void rd__vr_st_shift(const void *cmd, uint32_t out[2])
     memcpy(&out[0], &c->f[0], 4);
     memcpy(&out[1], &c->f[1], 4);
     s_dbgShift++;
+}
+
+uint32_t rd__vr_shadow_stencil(uint32_t kind, void *v, uint32_t n, int decr, uint32_t mode)
+{
+    if (kind != 1u || !s_vr.on || n < 3u || s_shadowOneSided) {
+        return mode;
+    }
+    IcoSpriteVertex *t = (IcoSpriteVertex *)v;
+    for (uint32_t i = 0; i + 2 < n; i += 3) {
+        const int64_t ax = t[i].x, ay = t[i].y;
+        const int64_t c = ((int64_t)t[i + 1].x - ax) * ((int64_t)t[i + 2].y - ay) -
+                          ((int64_t)t[i + 1].y - ay) * ((int64_t)t[i + 2].x - ax);
+        if (c != 0 && (c > 0) == (decr != 0)) {
+            const IcoSpriteVertex x = t[i + 1];
+            t[i + 1] = t[i + 2];
+            t[i + 2] = x;
+            s_dbgMixed++;
+        }
+    }
+    s_dbgTwo++;
+    return RD_STENCIL_TWO_SIDED_POS;
 }
 
 void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world)

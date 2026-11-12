@@ -83,6 +83,13 @@ void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world);
  * the mirror in the model) */
 void rd__vr_picture_camera(const void *frame, const void *cmd); /* RdFrame, RdCmd */
 bool rd__vr_picture_on(void); /* a reflection camera is set */
+/* the stencil mode of a shadow volume list (n IcoSpriteVertex at v, three a
+ * triangle; decr its one-sided op, mode that op's): when the eyes draw it
+ * (kind DrawCB.vr.x 1) each triangle is put in the order whose camera
+ * winding is its op's (a positive GS cross product increments) and
+ * RD_STENCIL_TWO_SIDED_POS returned, so each eye counts by its own winding
+ * (the camera's count unchanged); else mode */
+uint32_t rd__vr_shadow_stencil(uint32_t kind, void *v, uint32_t n, int decr, uint32_t mode);
 /* VuCB qword 20 of a grid (RDC_GRID) whose STs pool.c made from the frame
  * camera's screen (RdGridSt): x, y the S and T per GS pixel, z 1; zero
  * otherwise (vu_grid.hlsl moves each vertex's ST by its eye's screen move) */

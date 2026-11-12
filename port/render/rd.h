@@ -176,7 +176,14 @@ typedef enum RdStencilMode {
     /* the shadow resolve's A on a disc whose count steps by 8 (rd_shadow.c
      * "The step"): NOTEQUAL 0 under read mask 0x1F, the five bits 8 n mod
      * 256 keeps */
-    RD_STENCIL_TEST_NONZERO5
+    RD_STENCIL_TEST_NONZERO5,
+    /* VR fork (rd_vr.h): a shadow volume list whose triangles all wind one
+     * way on the camera's screen, counted by each eye's own winding: POS
+     * increments where a triangle winds as a positive GS cross product
+     * ((b - a) x (c - a), Y down) and decrements where it winds the other
+     * way, NEG the reverse */
+    RD_STENCIL_TWO_SIDED_POS,
+    RD_STENCIL_TWO_SIDED_NEG
 } RdStencilMode;
 
 typedef enum RdTargetFormat {
