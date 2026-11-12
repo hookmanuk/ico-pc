@@ -83,13 +83,17 @@ void rd__vr_fill_frame_cb(IcoFrameCB *cb, const RdCamera *cam, bool world);
  * the mirror in the model) */
 void rd__vr_picture_camera(const void *frame, const void *cmd); /* RdFrame, RdCmd */
 bool rd__vr_picture_on(void); /* a reflection camera is set */
-/* the stencil mode of a shadow volume list (n IcoSpriteVertex at v, three a
- * triangle; decr its one-sided op, mode that op's): when the eyes draw it
- * (kind DrawCB.vr.x 1) each triangle is put in the order whose camera
- * winding is its op's (a positive GS cross product increments) and
- * RD_STENCIL_TWO_SIDED_POS returned, so each eye counts by its own winding
- * (the camera's count unchanged); else mode */
-uint32_t rd__vr_shadow_stencil(uint32_t kind, void *v, uint32_t n, int decr, uint32_t mode);
+/* a shadow volume command (RdCmd) the eyes count by their own winding: the
+ * frame camera's (DrawCB.vr.x 1), VR on.  Its triangles are then put in the
+ * order whose camera winding is their op's (rd__vr_shadow_swap: true to swap
+ * the second and third vertex; decr the triangle's op, x, y its GS
+ * position) and drawn with rd__vr_shadow_stencil's RD_STENCIL_TWO_SIDED_POS
+ * (a positive GS cross product increments): the camera's count is
+ * unchanged, an eye that sees a face the other way counts it the other way */
+bool rd__vr_shadow_two(const void *cmd);
+bool rd__vr_shadow_swap(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t x2, int32_t y2,
+                        bool decr);
+uint32_t rd__vr_shadow_stencil(const void *cmd, uint32_t mode);
 /* VuCB qword 20 of a grid (RDC_GRID) whose STs pool.c made from the frame
  * camera's screen (RdGridSt): x, y the S and T per GS pixel, z 1; zero
  * otherwise (vu_grid.hlsl moves each vertex's ST by its eye's screen move) */

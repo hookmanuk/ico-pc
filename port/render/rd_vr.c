@@ -425,22 +425,24 @@ void rd__vr_st_shift(const void *cmd, uint32_t out[2])
     s_dbgShift++;
 }
 
-uint32_t rd__vr_shadow_stencil(uint32_t kind, void *v, uint32_t n, int decr, uint32_t mode)
+bool rd__vr_shadow_two(const void *cmd)
 {
-    if (kind != 1u || !s_vr.on || n < 3u || s_shadowOneSided) {
+    return s_vr.on && !s_shadowOneSided && rd__vr_screen_kind(cmd) == 1u;
+}
+
+bool rd__vr_shadow_swap(int32_t x0, int32_t y0, int32_t x1, int32_t y1, int32_t x2, int32_t y2,
+                        bool decr)
+{
+    const int64_t c = ((int64_t)x1 - x0) * ((int64_t)y2 - y0) - ((int64_t)y1 - y0) * ((int64_t)x2 - x0);
+    const bool swap = c != 0 && (c > 0) == decr;
+    s_dbgMixed += swap;
+    return swap;
+}
+
+uint32_t rd__vr_shadow_stencil(const void *cmd, uint32_t mode)
+{
+    if (!rd__vr_shadow_two(cmd)) {
         return mode;
-    }
-    IcoSpriteVertex *t = (IcoSpriteVertex *)v;
-    for (uint32_t i = 0; i + 2 < n; i += 3) {
-        const int64_t ax = t[i].x, ay = t[i].y;
-        const int64_t c = ((int64_t)t[i + 1].x - ax) * ((int64_t)t[i + 2].y - ay) -
-                          ((int64_t)t[i + 1].y - ay) * ((int64_t)t[i + 2].x - ax);
-        if (c != 0 && (c > 0) == (decr != 0)) {
-            const IcoSpriteVertex x = t[i + 1];
-            t[i + 1] = t[i + 2];
-            t[i + 2] = x;
-            s_dbgMixed++;
-        }
     }
     s_dbgTwo++;
     return RD_STENCIL_TWO_SIDED_POS;

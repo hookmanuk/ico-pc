@@ -4490,8 +4490,16 @@ static void doShadowStripIn(Replay *r, const RdFrame *f, const RdCmd *c)
         }
         const RdScreenVtx *v = (const RdScreenVtx *)(f->payload + c->u[1]);
         IcoSpriteVertex *o = (IcoSpriteVertex *)(g_rd.ringMap[s_slot] + vOff);
+        /* VR fork (rd_vr.h): each triangle in its op's camera winding */
+        const bool two = rd__vr_shadow_two(c);
+        bool swap = false;
         for (uint32_t i = 0; i < n; i++) {
-            convVtx(&v[i], 1, 1.0f, 1.0f, noOff, &o[i]);
+            const uint32_t k = i % 3u;
+            if (two && k == 0 && i + 2 < n) {
+                swap = rd__vr_shadow_swap(v[i].x, v[i].y, v[i + 1].x, v[i + 1].y, v[i + 2].x,
+                                          v[i + 2].y, i >= count[0]);
+            }
+            convVtx(&v[swap && k ? i - k + 3u - k : i], 1, 1.0f, 1.0f, noOff, &o[i]);
         }
     } else {
         const uint32_t n = c->u[0];
@@ -4502,14 +4510,20 @@ static void doShadowStripIn(Replay *r, const RdFrame *f, const RdCmd *c)
         }
         const float (*fv)[4] = (const float (*)[4])(f->payload + c->u[1]);
         IcoSpriteVertex *o = (IcoSpriteVertex *)(g_rd.ringMap[s_slot] + vOff);
+        const bool two = rd__vr_shadow_two(c); /* VR fork (rd_vr.h) */
         for (uint32_t t = 0; t < nt; t++) {
-            for (uint32_t j = 0; j < 3; j++) {
+            const bool swap =
+                two && rd__vr_shadow_swap((int32_t)fv[t][0], (int32_t)fv[t][1], (int32_t)fv[t + 1][0],
+                                          (int32_t)fv[t + 1][1], (int32_t)fv[t + 2][0],
+                                          (int32_t)fv[t + 2][1], !(c->f[0] > 0.0f));
+            for (uint32_t j0 = 0; j0 < 3; j0++) {
+                const uint32_t j = swap && j0 ? 3u - j0 : j0;
                 RdScreenVtx sv;
                 memset(&sv, 0, sizeof(sv));
                 sv.x = (int32_t)fv[t + j][0];
                 sv.y = (int32_t)fv[t + j][1];
                 sv.z = fv[t + j][2] <= 0.0f ? 0u : (uint32_t)fv[t + j][2];
-                convVtx(&sv, 1, 1.0f, 1.0f, noOff, &o[t * 3 + j]);
+                convVtx(&sv, 1, 1.0f, 1.0f, noOff, &o[t * 3 + j0]);
             }
         }
         count[0] = c->f[0] > 0.0f ? nt * 3 : 0;
@@ -4532,9 +4546,7 @@ static void doShadowStripIn(Replay *r, const RdFrame *f, const RdCmd *c)
         }
         RdPipeKeyInt k = rd__shadow_volume_key(&r->st, ds.tc->format, decr);
         /* VR fork (rd_vr.h): each eye counts by its own winding */
-        k.gs.stencil = (uint8_t)rd__vr_shadow_stencil(
-            cb.vr[0], g_rd.ringMap[s_slot] + vOff + (uint64_t)first * sizeof(IcoSpriteVertex),
-            count[decr], decr, k.gs.stencil);
+        k.gs.stencil = (uint8_t)rd__vr_shadow_stencil(c, k.gs.stencil);
         RhiPipeline p = rd__get_pipeline(&k);
         if (p.id) {
             rd__set_pipeline(s_cl, p, &k);
