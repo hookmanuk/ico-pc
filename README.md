@@ -1,5 +1,67 @@
 # ico-pc
 
+## VR
+
+This fork adds a VR mode for Windows: the whole game in stereo 3D in a
+headset, through OpenXR. Everything below this section is the original
+project's guide, and the flat game still runs as it describes.
+
+**Download:** [ico-pc v0.11.4-vr-0.1](https://github.com/hookmanuk/ico-pc/releases/tag/v0.11.4-vr-0.1)
+(newer builds, when there are any, are on the
+[releases page](https://github.com/hookmanuk/ico-pc/releases)). Take
+`ico-pc-v0.11.4-vr-0.1-win.zip`, or the `-win-portable.zip` to keep saves and
+settings in the game's own folder.
+
+**To play in VR**
+
+1. Unzip it and set up your disc image as in [Install](#install) below.
+   Starting `x64\ico_pc_x64.exe` once does that, and plays the flat game.
+2. Start your headset's OpenXR runtime. SteamVR is the one it was tested on.
+3. Double-click `x64\ico_vr.cmd`.
+
+You play seated, with a gamepad or the keyboard, as in the flat game. Motion
+controllers are not used. **F8** puts the view straight ahead of you again,
+and so does SteamVR's "Reset seated position".
+
+**What the VR mode does**
+
+- **The whole game in 3D.** Both eyes are drawn in one pass from the game's
+  own cameras, with the head's position and turn added, so you can look
+  around and lean from where each camera stands.
+- **A new picture for every headset frame.** The game updates 30 times a
+  second; the pictures between its updates are drawn with the motion in
+  between and with your head where it will be when the frame is shown, at
+  the headset's own refresh rate.
+- **The effects in both eyes.** Shadows, water reflections, fog, glow and
+  depth of field are drawn for each eye, not copied from one to the other.
+- **Menus and text on a screen in front of you.** The menus, the subtitles,
+  the title's logo and the Options pages sit on a fixed screen two metres
+  ahead. Movies, the boot screens and the pause screen are shown on a
+  larger flat screen.
+- **VR resolution in the menu.** Options > Display > **VR resolution** goes
+  from 50 % to 200 % of the size your headset asks for, and changes as you
+  press. Below 100 % is faster; above it smooths edges. SteamVR's per-app
+  video settings set the size the headset asks for.
+- **Options that fit VR.** The rows that do nothing in a headset (window
+  resolution, aspect ratio, frame rate, vertical sync, upscaling,
+  anti-aliasing, the CRT filter, video mode) are hidden while VR is on.
+  Screen softening and Motion blur start off. VR always runs the game in
+  its 60 Hz mode.
+- **The desktop window** shows the left eye while you play.
+
+**What it needs**
+
+- Windows 10 or 11, 64-bit, and a graphics card with Vulkan.
+- A PC VR headset with an OpenXR runtime set as the system's (SteamVR,
+  or the headset maker's own).
+
+**Known problems**
+
+- Now and then one of the game's cameras stands close behind a wall, and
+  you have to lean forward to see past it.
+- The VR mode is Windows only. The other platforms' builds are not part of
+  this fork's releases.
+
 This is **ICO** (Sony Computer Entertainment, 2001) made to run as a normal
 program on a Windows or Linux PC, the Steam Deck, 64-bit ARM Linux
 handhelds, Android phones and tablets, iPhones and Apple-silicon Macs. It

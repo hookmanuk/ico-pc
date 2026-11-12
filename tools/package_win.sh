@@ -114,6 +114,13 @@ TXT
 sed -i 's/$/\r/' "$d/tools/README.txt"
 # the make-portable script (stored with LF, CRLF in the package)
 sed 's/$/\r/' "$wt/tools/portable/make_portable.cmd" > "$d/make_portable.cmd"
+# VR fork (tools/vr): the OpenXR loader beside the program (the Khronos
+# SDK's prebuilt one; its licence joins NOTICES.txt through the manifest)
+# and the VR launcher (stored with LF, CRLF in the package)
+[[ -f "$wt/tools/vr/openxr_loader.dll" && -f "$wt/tools/vr/ico_vr.cmd" ]] ||
+    fail "tools/vr/openxr_loader.dll or ico_vr.cmd is missing from HEAD"
+cp "$wt/tools/vr/openxr_loader.dll" "$d/openxr_loader.dll"
+sed 's/$/\r/' "$wt/tools/vr/ico_vr.cmd" > "$d/ico_vr.cmd"
 # the textures folder, with a note in it (the zip keeps files, so the
 # note is what keeps the folder)
 rm -rf "$d/textures" "$d/models" "$d/reshade"
@@ -152,6 +159,7 @@ for variant in normal portable; do
     cp -a "$stage/docs" "$top/docs"
     cp -a "$stage/VERSION.txt" "$top/VERSION.txt"
     files=("ico_pc_$a.exe" "ico_pc_$a.map" SDL3.dll ico-pc.ini LICENSE.txt NOTICES.txt
+        openxr_loader.dll ico_vr.cmd
         tools/mc_import.exe tools/SDL3.dll tools/ico_icon_stamp.exe tools/README.txt)
     for r in "${pkg_note_rels[@]}"; do files+=("$r/README.txt"); done
     [[ "$variant" == portable ]] || files+=(make_portable.cmd)
@@ -173,6 +181,9 @@ for variant in normal portable; do
     # developer files stay out of the player zips
     pkg_assert_zip_has "$out" "ico-pc-$label/$a/ico_pc_$a.map" || fail "the $variant zip lacks $a/ico_pc_$a.map"
     pkg_assert_zip_has "$out" "ico-pc-$label/$a/tools/ico_icon_stamp.exe" || fail "the $variant zip lacks $a/tools/ico_icon_stamp.exe"
+    # VR fork: the loader and the launcher
+    pkg_assert_zip_has "$out" "ico-pc-$label/$a/openxr_loader.dll" || fail "the $variant zip lacks $a/openxr_loader.dll"
+    pkg_assert_zip_line "$out" "ico-pc-$label/$a/ico_vr.cmd" '\r$' || fail "the $variant zip's ico_vr.cmd is missing or not CRLF"
     for n in "$a/tools/rhi_d3d12_test.exe" "$a/tools/rd_replay_tool.exe" \
         "$a/tools/compare_backends.cmd" "$a/tools/compare_png.ps1"; do
         pkg_assert_zip_lacks "$out" "ico-pc-$label/$n" || fail "the $variant zip has $n"

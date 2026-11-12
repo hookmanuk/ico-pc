@@ -319,6 +319,16 @@
       "texts": [
         {"any_of": ["tools/toolchain/deps/moltenvk/ios/licenses/Vulkan-Headers-LICENSE.txt", "tools/toolchain/deps/moltenvk/macos/licenses/Vulkan-Headers-LICENSE.txt"]}
       ]
+    },
+    {
+      "name": "OpenXR loader (Khronos OpenXR SDK)",
+      "version": "1.1.63",
+      "licence": "Apache-2.0",
+      "used_for": "the VR fork: finds the headset's OpenXR runtime; shipped as openxr_loader.dll beside the program",
+      "platforms": ["windows"],
+      "texts": [
+        {"file": "tools/vr/OPENXR_LOADER_LICENSE.txt"}
+      ]
     }
   ]
 }
