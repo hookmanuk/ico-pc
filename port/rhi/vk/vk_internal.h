@@ -507,10 +507,6 @@ typedef struct VkrState {
      * every multisampled format takes, and the feature enabled */
     uint32_t msaaCounts;
     bool sampleRate;
-    /* VR fork: shaderStorageImageMultisample is enabled, which a shader
-       reading a multisampled two-layer image needs (SPIR-V ImageMSArray):
-       MSAA stays offered in the stereo mode */
-    bool stereoMsaa;
     /* the destination read (RhiLimits.fragmentInterlock,
      * rasterOrderAttachment): the features enabled */
     bool interlock;

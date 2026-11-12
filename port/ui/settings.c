@@ -1458,10 +1458,6 @@ static unsigned aaMask(void)
         m = (1u << ICO_AA_OFF) | (1u << ICO_AA_SSAA2) | (1u << ICO_AA_SSAA4);
 #endif
     }
-    if (ico_video_vr()) {
-        /* VR fork: MSAA only; the VR resolution row is the supersampling */
-        m &= ~((1u << ICO_AA_SSAA2) | (1u << ICO_AA_SSAA4));
-    }
     return m | (1u << ICO_AA_OFF);
 }
 
@@ -1471,9 +1467,7 @@ static int aaLocked(void)
 {
     IcoVideoOptions o;
     ico_video_get(&o);
-    /* VR fork: the Preset row is hidden in VR, and the host draws the
-       chosen anti-aliasing whatever it says (window_host.c) */
-    return ico_video_preset_rows(&o) == ICO_VIDEO_ORIGINAL && !ico_video_vr();
+    return ico_video_preset_rows(&o) == ICO_VIDEO_ORIGINAL;
 }
 
 /* the order the row steps through (the numbers are the enum's, shared with
@@ -2105,6 +2099,7 @@ static int vrHiddenOpt(int opt)
     case UI_OPT_ASPECT:
     case UI_OPT_VSYNC:
     case UI_OPT_FRAMERATE:
+    case UI_OPT_ANTI_ALIAS:
     case UI_OPT_DOWNSAMPLE:
     case UI_OPT_UPSCALE:
     case UI_OPT_UPSCALE_QUALITY:
@@ -2305,7 +2300,8 @@ static int steppable(int opt)
 {
     return (opt >= UI_OPT_PRESET && opt <= UI_OPT_DEVELOPER) /* includes the Effects rows */ ||
            opt == UI_OPT_FREE_MOVEMENT || opt == UI_OPT_GPU_DRIVER || opt == UI_OPT_GPU_ADD_FILE ||
-           opt == UI_OPT_GRAPHICS_API || opt == UI_OPT_GRAPHICS_ADAPTER || ui__diff_opt(opt);
+           opt == UI_OPT_GRAPHICS_API || opt == UI_OPT_GRAPHICS_ADAPTER || ui__diff_opt(opt) ||
+           opt == UI_OPT_VR_RENDER_SCALE; /* VR fork: outside the range above */
 }
 
 static int resolutionLocked(void)
@@ -2555,7 +2551,7 @@ void ui_settings_step(UiSettingsOpt opt, int dir)
         break;
     }
     case UI_OPT_VR_RENDER_SCALE: {
-        /* VR fork: 50 .. 200 % in tens, held at both ends */
+        /* VR fork: 100 .. 200 % in tens, held at both ends */
         const int v =
             ico_video_vr_render_scale_clamp(o.vrRenderScale + dir * ICO_VR_RENDER_SCALE_STEP);
         if (v == o.vrRenderScale) {

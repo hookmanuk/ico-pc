@@ -261,7 +261,7 @@ typedef struct IcoVideoOptions {
     int vrRenderScale;
 } IcoVideoOptions;
 
-#define ICO_VR_RENDER_SCALE_MIN 50
+#define ICO_VR_RENDER_SCALE_MIN 100
 #define ICO_VR_RENDER_SCALE_MAX 200
 #define ICO_VR_RENDER_SCALE_STEP 10
 #define ICO_VR_RENDER_SCALE_DEFAULT 100

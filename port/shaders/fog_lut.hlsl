@@ -85,7 +85,7 @@ struct FogPSIn {
 SubpassInput<float> g_fogDepthIn : ICO_REG(t1, 2);
 #define FOG_LOCAL_READ 1
 #elif defined(FOG_MS)
-ICO_T2DMS(float) g_fogDepth : ICO_REG(t1, 2);
+Texture2DMS<float> g_fogDepth : ICO_REG(t1, 2);
 #elif defined(FOG_BUFFER)
 ICO_T2D(uint) g_fogDepth : ICO_REG(t1, 2);
 #else
@@ -124,7 +124,7 @@ GS_PS_ATTR GS_PS_OUT fog_lut_ps(FogPSIn i)
         uint dw, dh;
 #ifdef FOG_MS
         uint dn;
-        ICO_MSDIMS(g_fogDepth, dw, dh, dn);
+        g_fogDepth.GetDimensions(dw, dh, dn);
 #else
         ICO_DIMS(g_fogDepth, dw, dh);
 #endif
@@ -136,7 +136,7 @@ GS_PS_ATTR GS_PS_OUT fog_lut_ps(FogPSIn i)
 #ifdef FOG_LOCAL_READ
     float d = g_fogDepthIn.SubpassLoad();
 #elif defined(FOG_MS)
-    float d = g_fogDepth.Load(ICO_MSLD(tc), int(i.sampleIndex));
+    float d = g_fogDepth.Load(tc, int(i.sampleIndex));
 #elif defined(FOG_BUFFER)
     uint raw = g_fogDepth.Load(ICO_LD(tc, 0));
     // the step as the sampled UNORM depth gives it (raw / (2^24 - 1)), or

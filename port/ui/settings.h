@@ -900,7 +900,7 @@ typedef enum UiSettingsOpt {
     UI_OPT_DIFF_KNOCK_LIMIT,
     UI_OPT_DIFF_KNOCK_SCOPE,
     UI_OPT_DIFF_PERMADEATH,
-    /* VR fork: Display's VR resolution ([vr] render_scale, 50..200 % in
+    /* VR fork: Display's VR resolution ([vr] render_scale, 100..200 % in
        tens), shown in VR only */
     UI_OPT_VR_RENDER_SCALE,
 } UiSettingsOpt;

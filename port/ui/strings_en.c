@@ -528,7 +528,8 @@ const char *const ui_strings_en[UI_STR_COUNT] = {
     [UI_STR_OPT_VR_RENDER_SCALE] = "VR resolution",
     [UI_STR_VR_RENDER_SCALE_NOTE] =
         "How sharp the headset's picture is, against the size the headset asks for. "
-        "Lower is faster; above 100 % smooths edges.",
+        "100 % is that size; higher draws more detail and smooths edges, and needs more "
+        "from your graphics card.",
     [UI_STR_EFFECT_MOTION_BLUR_NOTE] =
         "Original moves the trail on with the game’s own frames. Smooth moves it on with every frame shown, the same length of trail.",
     [UI_STR_OPT_EFFECT_CINEMATIC_BARS] = "Cinematic bars",

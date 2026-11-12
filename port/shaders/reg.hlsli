@@ -31,9 +31,6 @@
 //   ICO_LD3(p)               the same from an int3 (xy, level)
 //   ICO_DIMS(t, w, h)        GetDimensions(w, h)
 //   ICO_DIMS_LV(t, lv, w, h, n) GetDimensions(lv, w, h, n)
-//   ICO_T2DMS(T)             the multisampled texture type (MSAA)
-//   ICO_MSLD(p)              a multisampled Load's coordinate of int2 p
-//   ICO_MSDIMS(t, w, h, n)   its GetDimensions(w, h, samples)
 #ifdef ICO_VR
 [[vk::ext_extension("SPV_KHR_multiview")]] [[vk::ext_capability(/* MultiView */ 4439)]]
 [[vk::ext_builtin_input(/* ViewIndex */ 4440)]] static const uint g_viewIndex;
@@ -44,9 +41,6 @@
 #define ICO_LD3(p) int4((p).xy, (int)g_viewIndex, (p).z)
 #define ICO_DIMS(t, w, h) { uint ico_dims_l_; (t).GetDimensions((w), (h), ico_dims_l_); }
 #define ICO_DIMS_LV(t, lv, w, h, n) { uint ico_dims_l_; (t).GetDimensions((lv), (w), (h), ico_dims_l_, (n)); }
-#define ICO_T2DMS(T) Texture2DMSArray<T>
-#define ICO_MSLD(p) int3((p), (int)g_viewIndex)
-#define ICO_MSDIMS(t, w, h, n) { uint ico_dims_l_; (t).GetDimensions((w), (h), ico_dims_l_, (n)); }
 #else
 #define ICO_T2D(T) Texture2D<T>
 #define ICO_UV(uv) (uv)
@@ -55,9 +49,6 @@
 #define ICO_LD3(p) (p)
 #define ICO_DIMS(t, w, h) (t).GetDimensions((w), (h))
 #define ICO_DIMS_LV(t, lv, w, h, n) (t).GetDimensions((lv), (w), (h), (n))
-#define ICO_T2DMS(T) Texture2DMS<T>
-#define ICO_MSLD(p) (p)
-#define ICO_MSDIMS(t, w, h, n) (t).GetDimensions((w), (h), (n))
 #endif
 
 #endif

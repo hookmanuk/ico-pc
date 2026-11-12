@@ -483,9 +483,9 @@ static void video_settings(RdSettings *rs, int w, int h)
         ico_video_set_vr(1); /* the Options menu's VR rows (video_options.h) */
         rs->outputWidth = ew;
         rs->outputHeight = eh;
-        /* Display > VR resolution: the scene at its percent of the eyes',
-           presented to their size (rd_present.c: stretched, or box-reduced
-           above 100 %); no upscaler in VR */
+        /* Display > VR resolution, 100 to 200 %: the scene at its percent
+           of the eyes', box-reduced to their size above 100 % by the
+           present (rd_present.c); no upscaler in VR */
         const uint32_t pct = (uint32_t)ico_video_vr_render_scale();
         rs->sceneWidth = (ew * pct + 50u) / 100u;
         rs->sceneHeight = (eh * pct + 50u) / 100u;
@@ -494,13 +494,7 @@ static void video_settings(RdSettings *rs, int w, int h)
         rs->fullHeightScene = 1;
         rs->fullPixel = 1;
         rs->borderMask = 0;
-        /* Picture > Anti-aliasing: MSAA as chosen, whatever the hidden
-           Preset row says; supersampling is the VR resolution row's (above
-           100 %), so a saved SSAA choice draws as Off in VR */
-        rs->antiAlias = (uint8_t)(rd_aa_samples(o.antiAlias) > 1u ? o.antiAlias : ICO_AA_OFF);
-        if (rs->antiAlias != ICO_AA_OFF) {
-            rs->preset = RD_PRESET_ENHANCED; /* the renderer draws no AA under Original */
-        }
+        rs->antiAlias = 0;
         rs->downsample = 0;
         rs->upscale = RD_UPSCALE_OFF;
         rd_crt_settings(rs, RD_CRT_OFF, 0.0f);
