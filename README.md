@@ -8,9 +8,8 @@ project's guide, and the flat game still runs as it describes.
 
 **Download:** [ico-pc v0.11.4-vr-0.1](https://github.com/hookmanuk/ico-pc/releases/tag/v0.11.4-vr-0.1)
 (newer builds, when there are any, are on the
-[releases page](https://github.com/hookmanuk/ico-pc/releases)). Take
-`ico-pc-v0.11.4-vr-0.1-win.zip`, or the `-win-portable.zip` to keep saves and
-settings in the game's own folder.
+[releases page](https://github.com/hookmanuk/ico-pc/releases)). The file is
+`ico-pc-v0.11.4-vr-0.1-win.zip`.
 
 **To play in VR**
 
