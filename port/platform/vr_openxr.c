@@ -134,6 +134,13 @@ static struct {
     double lastEnd;
     double intervals[1024];
     uint32_t nIntervals;
+    /* the display side: the gaps between successive frames' predicted display
+       times (ms; the runtime's own cadence: a skipped display slot is a gap of
+       two periods), frames whose work (xrWaitFrame's return to xrEndFrame's)
+       ran past one period, and each frame's picture wait (ms) */
+    double shows[1024], pics[1024];
+    uint32_t nShows, nPics, overBudget;
+    XrTime lastShow;
     float refreshHz;
 } g;
 
@@ -663,8 +670,36 @@ static void dumpEyes(RhiTexture tex, uint64_t timeline, uint64_t id)
     left--;
 }
 
+static double pct99(const double *v, uint32_t n)
+{
+    double sorted[1024];
+    for (uint32_t i = 0; i < n; i++) {
+        const double x = v[i];
+        uint32_t j = i;
+        while (j > 0 && sorted[j - 1] > x) {
+            sorted[j] = sorted[j - 1];
+            j--;
+        }
+        sorted[j] = x;
+    }
+    return n ? sorted[n * 99 / 100] : 0.0;
+}
+
 static void report(double period)
 {
+    if (g.nShows > 1) {
+        uint32_t skipped = 0;
+        double worst = 0.0;
+        for (uint32_t i = 0; i < g.nShows; i++) {
+            skipped += g.shows[i] > 1.5 * period;
+            worst = g.shows[i] > worst ? g.shows[i] : worst;
+        }
+        VR_LOG("display: 1%% low %.1f FPS by the display times (worst gap %.1f ms), %u display slots "
+               "skipped of %u, %u frames over budget (wait to end past a period), picture wait p99 %.2f ms",
+               1000.0 / pct99(g.shows, g.nShows), worst, skipped, g.nShows, g.overBudget,
+               pct99(g.pics, g.nPics));
+    }
+    g.nShows = g.nPics = g.overBudget = 0;
     if (g.nIntervals < 2) {
         return;
     }
@@ -686,7 +721,7 @@ static void report(double period)
     }
     const double p99 = sorted[g.nIntervals * 99 / 100];
     const double n = (double)g.frames;
-    VR_LOG("headset %.1f FPS (display %.1f Hz), 1%% low %.1f FPS, late %.2f%%, new pictures %.1f%%; "
+    VR_LOG("headset %.1f FPS (display %.1f Hz), submit 1%% low %.1f FPS (end to end), late %.2f%%, new pictures %.1f%%; "
            "loop ms avg/max: wait frame %.2f/%.1f, picture %.2f/%.1f, end %.2f/%.1f",
            1000.0 * g.nIntervals / sum, 1000.0 / period, 1000.0 / p99,
            100.0 * late / g.nIntervals, 100.0 * g.newPictures / n, g.sumWait / n, g.maxWait,
@@ -848,6 +883,18 @@ static int frameLoop(void *arg)
         g.maxPic = g.maxPic > t2 - t1 ? g.maxPic : t2 - t1;
         g.sumEnd += t3 - t2;
         g.maxEnd = g.maxEnd > t3 - t2 ? g.maxEnd : t3 - t2;
+        if (fs.shouldRender) {
+            if (g.lastShow && fs.predictedDisplayTime > g.lastShow && g.nShows < 1024) {
+                g.shows[g.nShows++] = (double)(fs.predictedDisplayTime - g.lastShow) / 1e6;
+            }
+            g.lastShow = fs.predictedDisplayTime;
+            if (g.nPics < 1024) {
+                g.pics[g.nPics++] = t2 - t1;
+            }
+            const double per =
+                fs.predictedDisplayPeriod > 0 ? (double)fs.predictedDisplayPeriod / 1e6 : 11.1;
+            g.overBudget += t3 - t1 > per;
+        }
         if (g.lastEnd > 0.0 && g.nIntervals < 1024) {
             g.intervals[g.nIntervals++] = t3 - g.lastEnd;
         }
