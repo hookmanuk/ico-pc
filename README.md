@@ -17,7 +17,7 @@ settings in the game's own folder.
 1. Unzip it and set up your disc image as in [Install](#install) below.
    Starting `x64\ico_pc_x64.exe` once does that, and plays the flat game.
 2. Start your headset's OpenXR runtime. SteamVR is the one it was tested on.
-3. Double-click `x64\ico_vr.cmd`.
+3. Double-click `ico_vr.cmd`, in the unzipped folder beside this README.
 
 You play seated, with a gamepad or the keyboard, as in the flat game. Motion
 controllers are not used. **F8** puts the view straight ahead of you again,
