@@ -30,6 +30,12 @@ You play seated, with a gamepad or the keyboard, as in the flat game. Motion
 controllers are not used. **F8** puts the view straight ahead of you again,
 and so does SteamVR's "Reset seated position".
 
+**With a gamepad, turn on Analogue stick fix.** It is in Options >
+Controls > **Analogue stick fix** (start the game, press Start, or choose
+Options on the title screen). With it on, Ico runs in whichever direction
+you push the stick; without it he only knows the original game's eight
+directions and can walk when you mean him to run.
+
 **What the VR mode does**
 
 - **The whole game in 3D.** Both eyes are drawn in one pass from the game's
