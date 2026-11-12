@@ -1081,6 +1081,9 @@ typedef enum UiStrId {
     UI_STR_DIFF_STATES_LOCKED,
     UI_STR_DIFF_WORD_PERMADEATH,
     UI_STR_DIFF_STATES_SAVE_LOCKED, /* a save state's save refused on a Permadeath journey */
+    /* VR fork: Display > VR resolution, and its note */
+    UI_STR_OPT_VR_RENDER_SCALE,
+    UI_STR_VR_RENDER_SCALE_NOTE,
     UI_STR_COUNT
 } UiStrId;
 

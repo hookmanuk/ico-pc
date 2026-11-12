@@ -5,8 +5,18 @@
  */
 #include "video_options.h"
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include "config.h"
+
+/* VR fork: Screen softening and Motion blur start Off in VR (ICO_VR=1 or
+ * [vr] enabled = true): a full-picture blur and a trail over the head's
+ * own movement.  A choice saved in config.toml is kept. */
+static int vr_effect_default(void)
+{
+    const char *e = getenv("ICO_VR");
+    return (e && e[0] == '1') || ico_config_get_bool("vr.enabled", 0) ? 0 : 1;
+}
 
 #define ASPECT_4_3 (4.0f / 3.0f)
 #define ASPECT_16_9 (16.0f / 9.0f)
@@ -89,8 +99,8 @@ void ico_video_defaults_for(IcoVideoOptions *o, int android)
     o->texturePackCacheMb = 0;
     o->effectGlow = 1;
     o->effectDepthOfField = 1;
-    o->effectSoftening = 1;
-    o->effectMotionBlur = 1;
+    o->effectSoftening = vr_effect_default();
+    o->effectMotionBlur = vr_effect_default();
     o->effectMotionBlurSmooth = 0;
     o->effectMotionBlurStrength = ICO_MOTION_BLUR_STRENGTH_MAX;
     o->effectGlowSmooth = 0;
@@ -98,6 +108,7 @@ void ico_video_defaults_for(IcoVideoOptions *o, int android)
     o->effectCinematicBars = 1;
     o->effectWaterSharp = 0;
     o->effectsDepth = 1;
+    o->vrRenderScale = ICO_VR_RENDER_SCALE_DEFAULT;
 }
 
 void ico_video_defaults(IcoVideoOptions *o)
@@ -525,6 +536,7 @@ static void sanitize(IcoVideoOptions *o)
     o->effectCinematicBars = !!o->effectCinematicBars;
     o->effectWaterSharp = !!o->effectWaterSharp;
     o->effectsDepth = !!o->effectsDepth;
+    o->vrRenderScale = ico_video_vr_render_scale_clamp(o->vrRenderScale);
 }
 
 static void read_config(void)
@@ -671,8 +683,8 @@ static void read_config(void)
     /* the effects */
     o.effectGlow = ico_config_get_bool("video.effect_glow", 1);
     o.effectDepthOfField = ico_config_get_bool("video.effect_depth_of_field", 1);
-    o.effectSoftening = ico_config_get_bool("video.effect_softening", 1);
-    o.effectMotionBlur = ico_config_get_bool("video.effect_motion_blur", 1);
+    o.effectSoftening = ico_config_get_bool("video.effect_softening", vr_effect_default());
+    o.effectMotionBlur = ico_config_get_bool("video.effect_motion_blur", vr_effect_default());
     /* no key (a file from before the choice): Original, as before */
     if (ico_video_parse_motion_blur_mode(
             ico_config_get_string("video.effect_motion_blur_mode", "original"),
@@ -698,6 +710,10 @@ static void read_config(void)
     o.effectWaterSharp = ico_config_get_bool("video.effect_water_sharp", 0);
     /* the depth handed to an effects program (ReShade) */
     o.effectsDepth = ico_config_get_bool("video.effects_depth", 1);
+    {
+        const long long v = ico_config_get_int("vr.render_scale", ICO_VR_RENDER_SCALE_DEFAULT);
+        o.vrRenderScale = ico_video_vr_render_scale_clamp(v < 0 ? 0 : v > 1000 ? 1000 : (int)v);
+    }
     /* Glow between frames: an explicit key wins; no key (a file from before
        the row) takes the Enhanced rows' Smooth below, once the preset is
        settled */
@@ -864,6 +880,11 @@ int ico_video_save(void)
     if (!o.effectsDepth || ico_config_get_bool("video.effects_depth", 2) != 2) {
         r |= ico_config_set_bool("video.effects_depth", o.effectsDepth);
     }
+    /* VR fork: only once it is changed, or kept in step */
+    if (o.vrRenderScale != ICO_VR_RENDER_SCALE_DEFAULT ||
+        ico_config_get_int("vr.render_scale", -1) != -1) {
+        r |= ico_config_set_int("vr.render_scale", o.vrRenderScale);
+    }
     return r != 0 ? -1 : ico_config_save();
 }
 
@@ -978,6 +999,34 @@ int ico_video_effect_motion_blur_strength(void)
         read_config();
     }
     return s_opt.effectMotionBlurStrength;
+}
+
+static int s_vrOn;
+
+void ico_video_set_vr(int on)
+{
+    s_vrOn = on != 0;
+}
+
+int ico_video_vr(void)
+{
+    return s_vrOn;
+}
+
+int ico_video_vr_render_scale(void)
+{
+    if (!s_read) {
+        read_config();
+    }
+    return s_opt.vrRenderScale;
+}
+
+int ico_video_vr_render_scale_clamp(int v)
+{
+    v = (v + ICO_VR_RENDER_SCALE_STEP / 2) / ICO_VR_RENDER_SCALE_STEP * ICO_VR_RENDER_SCALE_STEP;
+    return v < ICO_VR_RENDER_SCALE_MIN   ? ICO_VR_RENDER_SCALE_MIN
+           : v > ICO_VR_RENDER_SCALE_MAX ? ICO_VR_RENDER_SCALE_MAX
+                                         : v;
 }
 
 int ico_video_motion_blur_strength_clamp(int v)

@@ -534,7 +534,31 @@ int ico_config_write_first_run(void)
         fprintf(stderr, "config: cannot write %s\n", toml_file);
         return -1;
     }
-    ok = fwrite(first_run_text, 1, n, f) == n;
+    {
+        /* VR fork: in VR (ICO_VR=1) the file starts with Screen softening
+           and Motion blur off (video_options.c vr_effect_default) */
+        const char *vr = getenv("ICO_VR");
+        static char text[sizeof(first_run_text) + 8];
+        const char *out = first_run_text;
+        if (vr && vr[0] == '1') {
+            static const char *const keys[2] = {"\neffect_softening = true\n",
+                                                "\neffect_motion_blur = true\n"};
+            memcpy(text, first_run_text, sizeof(first_run_text));
+            for (int k = 0; k < 2; k++) {
+                char *at = strstr(text, keys[k]);
+                if (at) {
+                    /* "true" to "false" in place: one byte longer, so the
+                       rest of the text moves on by one */
+                    const size_t key = strlen(keys[k]) - 5u;
+                    memmove(at + key + 6u, at + key + 5u, strlen(at + key + 5u) + 1u);
+                    memcpy(at + key, "false\n", 6u);
+                }
+            }
+            out = text;
+        }
+        n = strlen(out);
+        ok = fwrite(out, 1, n, f) == n;
+    }
     ok = ico_fsync(f) == 0 && ok;
     ok = fclose(f) == 0 && ok;
     /* a file that appeared meanwhile is the player's: not replaced */

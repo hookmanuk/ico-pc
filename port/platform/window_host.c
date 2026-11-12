@@ -480,10 +480,15 @@ static void video_settings(RdSettings *rs, int w, int h)
            scene, the 4:3 frame whole in each, a picture each headset frame */
         uint32_t ew = 0, eh = 0;
         rd_vr_eye_size(&ew, &eh);
+        ico_video_set_vr(1); /* the Options menu's VR rows (video_options.h) */
         rs->outputWidth = ew;
         rs->outputHeight = eh;
-        rs->sceneWidth = ew;
-        rs->sceneHeight = eh;
+        /* Display > VR resolution: the scene at its percent of the eyes',
+           presented to their size (rd_present.c: stretched, or box-reduced
+           above 100 %); no upscaler in VR */
+        const uint32_t pct = (uint32_t)ico_video_vr_render_scale();
+        rs->sceneWidth = (ew * pct + 50u) / 100u;
+        rs->sceneHeight = (eh * pct + 50u) / 100u;
         rs->sceneScale = 0.0f;
         rs->aspect = 4.0f / 3.0f;
         rs->fullHeightScene = 1;

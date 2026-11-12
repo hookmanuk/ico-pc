@@ -1864,6 +1864,9 @@ static const char *rawValue(int opt, char *buf, unsigned size)
     case UI_OPT_EFFECT_MOTION_BLUR_STRENGTH:
         snprintf(buf, size, "%d %%", o.effectMotionBlurStrength);
         return buf;
+    case UI_OPT_VR_RENDER_SCALE:
+        snprintf(buf, size, "%d %%", o.vrRenderScale);
+        return buf;
     case UI_OPT_EFFECT_FOG:
         return onOff(o.effectFog);
     case UI_OPT_EFFECT_WATER:
@@ -2085,8 +2088,40 @@ static int isGameOpt(int opt)
            opt == UI_OPT_FILM_EFFECT || opt == UI_OPT_PLAYERS;
 }
 
+/* VR fork: the rows the headset's picture does not use (window_host.c
+   sets the scene, aspect, sync and presentation in VR); the VR resolution
+   row in their place */
+static int vrHiddenOpt(int opt)
+{
+    switch (opt) {
+    case UI_OPT_PRESET:
+    case UI_OPT_RESOLUTION:
+    case UI_OPT_ASPECT:
+    case UI_OPT_VSYNC:
+    case UI_OPT_FRAMERATE:
+    case UI_OPT_ANTI_ALIAS:
+    case UI_OPT_DOWNSAMPLE:
+    case UI_OPT_UPSCALE:
+    case UI_OPT_UPSCALE_QUALITY:
+    case UI_OPT_UPSCALE_SHARPNESS:
+    case UI_OPT_FULL_HEIGHT:
+    case UI_OPT_FULL_PIXEL:
+    case UI_OPT_CRT:
+    case UI_OPT_CRT_STRENGTH:
+        return 1;
+    default:
+        return 0;
+    }
+}
+
 static int optShown(int opt, int link)
 {
+    if (opt == UI_OPT_VR_RENDER_SCALE) {
+        return ico_video_vr();
+    }
+    if (ico_video_vr() && vrHiddenOpt(opt)) {
+        return 0;
+    }
     if (ui__diff_opt(opt)) {
         return ui__diff_shown(opt);
     }
@@ -2281,7 +2316,8 @@ static int glowSmoothLocked(void)
 {
     IcoVideoOptions o;
     ico_video_get(&o);
-    return o.framerate == ICO_FRAMERATE_ORIGINAL || !o.effectGlow;
+    /* VR presents between ticks whatever Frame rate says (window_host.c) */
+    return (o.framerate == ICO_FRAMERATE_ORIGINAL && !ico_video_vr()) || !o.effectGlow;
 }
 
 /* a press changes the option now: the video mode only from the title, the
@@ -2510,6 +2546,17 @@ void ui_settings_step(UiSettingsOpt opt, int dir)
         if (i) {
             o.effectMotionBlurSmooth = i == 2;
         }
+        video = 1;
+        break;
+    }
+    case UI_OPT_VR_RENDER_SCALE: {
+        /* VR fork: 50 .. 200 % in tens, held at both ends */
+        const int v =
+            ico_video_vr_render_scale_clamp(o.vrRenderScale + dir * ICO_VR_RENDER_SCALE_STEP);
+        if (v == o.vrRenderScale) {
+            return;
+        }
+        o.vrRenderScale = v;
         video = 1;
         break;
     }
@@ -3378,6 +3425,7 @@ static void buildOptionPage(int id, int header, const int *opts, const int *strs
         break;
     case UI_PAGE_DISPLAY:
         addNote(pg, UI_OPT_RESOLUTION, UI_STR_RESOLUTION_CRT_NOTE);
+        addNote(pg, UI_OPT_VR_RENDER_SCALE, UI_STR_VR_RENDER_SCALE_NOTE);
         break;
     case UI_PAGE_PICTURE:
         addNote(pg, UI_OPT_ANTI_ALIAS, UI_STR_OPT_AA_NOTE);
@@ -4113,13 +4161,15 @@ static void build(void)
                                    UI_STR_BACK};
     /* every Display row always shown, Frame rate included (the picture's
        own rows are the Picture page's) */
-    static const int dispOpts[] = {UI_OPT_PRESET,      UI_OPT_RESOLUTION, UI_OPT_ASPECT,
-                                   UI_OPT_WINDOW_MODE, UI_OPT_VSYNC,      UI_OPT_FRAMERATE,
-                                   UI_OPT_SHOW_FPS,    UI_OPT_VIDEO_MODE, UI_OPT_BACK};
+    static const int dispOpts[] = {UI_OPT_VR_RENDER_SCALE, UI_OPT_PRESET,    UI_OPT_RESOLUTION,
+                                   UI_OPT_ASPECT,          UI_OPT_WINDOW_MODE, UI_OPT_VSYNC,
+                                   UI_OPT_FRAMERATE,       UI_OPT_SHOW_FPS,   UI_OPT_VIDEO_MODE,
+                                   UI_OPT_BACK};
     static const int dispStrs[] = {
-        UI_STR_OPT_PRESET,      UI_STR_OPT_RESOLUTION, UI_STR_OPT_ASPECT,
-        UI_STR_OPT_WINDOW_MODE, UI_STR_OPT_VSYNC,      UI_STR_OPT_FRAMERATE,
-        UI_STR_OPT_SHOW_FPS,    UI_STR_OPT_VIDEO_MODE, UI_STR_BACK};
+        UI_STR_OPT_VR_RENDER_SCALE, UI_STR_OPT_PRESET,      UI_STR_OPT_RESOLUTION,
+        UI_STR_OPT_ASPECT,          UI_STR_OPT_WINDOW_MODE, UI_STR_OPT_VSYNC,
+        UI_STR_OPT_FRAMERATE,       UI_STR_OPT_SHOW_FPS,    UI_STR_OPT_VIDEO_MODE,
+        UI_STR_BACK};
     static const int audioOpts[] = {UI_OPT_VOLUME, UI_OPT_MUSIC,  UI_OPT_EFFECTS,
                                     UI_OPT_OUTPUT, UI_OPT_DEVICE, UI_OPT_BACK};
     static const int audioStrs[] = {UI_STR_OPT_VOLUME, UI_STR_OPT_MUSIC_VOL, UI_STR_OPT_EFFECTS_VOL,

@@ -255,7 +255,16 @@ typedef struct IcoVideoOptions {
     /* an output-size depth buffer in the presentation for an
        effects program (rd.h RdSettings.effectsDepth); 1 = on */
     int effectsDepth;
+    /* VR fork: [vr] render_scale, the scene's size in percent of the
+       headset's eye images (ICO_VR_RENDER_SCALE_*); the Display page's VR
+       resolution row, shown in VR only */
+    int vrRenderScale;
 } IcoVideoOptions;
+
+#define ICO_VR_RENDER_SCALE_MIN 50
+#define ICO_VR_RENDER_SCALE_MAX 200
+#define ICO_VR_RENDER_SCALE_STEP 10
+#define ICO_VR_RENDER_SCALE_DEFAULT 100
 
 /* IcoVideoOptions.texturePackBudgetMb: the default and the range a value
    is clamped to */
@@ -384,6 +393,13 @@ int ico_video_effect_motion_blur_smooth(void);
    own): the host hands it to the renderer (window_host.c video_settings,
    RdSettings.motionBlurStrength) */
 int ico_video_effect_motion_blur_strength(void);
+/* VR fork: IcoVideoOptions.vrRenderScale, and a value held to its range and steps */
+int ico_video_vr_render_scale(void);
+/* VR fork: the headset is on (the host sets it once VR starts); the
+   Options menu then hides the rows VR does not use */
+void ico_video_set_vr(int on);
+int ico_video_vr(void);
+int ico_video_vr_render_scale_clamp(int v);
 /* 1 when the glow is on and Smooth ([video] effect_glow = true,
    effect_glow_mode = "smooth"): the host hands it to the renderer
    (window_host.c video_settings, RdSettings.glowSmooth); 0 for Off and

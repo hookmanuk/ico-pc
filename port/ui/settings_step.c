@@ -34,6 +34,7 @@ int ui__step_repeats(int opt)
     case UI_OPT_CRT_STRENGTH:
     case UI_OPT_UPSCALE_SHARPNESS:
     case UI_OPT_EFFECT_MOTION_BLUR_STRENGTH:
+    case UI_OPT_VR_RENDER_SCALE:
     case UI_OPT_VOLUME:
     case UI_OPT_MUSIC:
     case UI_OPT_EFFECTS:
