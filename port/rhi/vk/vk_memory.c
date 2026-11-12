@@ -4,6 +4,7 @@
  * (vk_resource.c) walks the list and takes the next type when the driver
  * refuses one, so a full heap costs speed, not the picture. */
 #include "vk_internal.h"
+#include <stdlib.h>
 
 /* every type of typeBits whose flags hold `want` and none of `avoid`, in
    index order, that is not listed yet and not in skip */
@@ -61,6 +62,24 @@ uint32_t vkr_memory_candidates(RhiMemory kind, uint32_t typeBits, VkDeviceSize s
                 if (vkr_memory_small_window(props, i)) {
                     skip |= 1u << i;
                 }
+            }
+        }
+        {
+            /* host-cached system memory first: the renderer writes its
+               uniform blocks, streams and vertices into the upload rings
+               every picture, and write-combined stores across the bus to a
+               resizable-BAR window cost the render thread far more than the
+               GPU's cached reads across it (RTX 5090, ICO VR stage 16 at
+               120 Hz: render thread 6.5 -> 5.0 ms a picture, GPU 1.8 ->
+               1.9; flat 2.4 -> 1.9).  ICO_RHI_UPLOAD_CACHED=0: the
+               device-local window first, as before */
+            static int s_cached = -1;
+            if (s_cached < 0) {
+                const char *e = getenv("ICO_RHI_UPLOAD_CACHED");
+                s_cached = !(e && e[0] == '0');
+            }
+            if (s_cached) {
+                vkr_add_types(props, typeBits, hv | hc | hcached, dl, skip, &listed, out, &n);
             }
         }
         vkr_add_types(props, typeBits, hv | hc | dl, 0, skip, &listed, out, &n);

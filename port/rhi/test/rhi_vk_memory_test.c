@@ -79,22 +79,22 @@ static void smallWindow(void)
     const VkPhysicalDeviceMemoryProperties p = nvidiaNoRebar(214 * MB);
     uint32_t out[VK_MAX_MEMORY_TYPES], n;
 
-    /* a 4 MB ring: the window, then system memory (coherent first, then
-       coherent and cached) */
+    /* a 4 MB ring: cached system memory (the CPU's writes cached), the
+       window, then coherent system memory */
     n = vkr_memory_candidates(RHI_MEM_UPLOAD, 0xF, 4 * MB, &p, 0, out);
-    expect("4 MB upload", out, n, (const uint32_t[]){3, 1, 2}, 3);
+    expect("4 MB upload", out, n, (const uint32_t[]){2, 3, 1}, 3);
     /* 16 MB is the most the window takes */
     n = vkr_memory_candidates(RHI_MEM_UPLOAD, 0xF, 16 * MB, &p, 0, out);
-    expect("16 MB upload", out, n, (const uint32_t[]){3, 1, 2}, 3);
+    expect("16 MB upload", out, n, (const uint32_t[]){2, 3, 1}, 3);
     /* a 32 MB ring goes to system memory, the window last */
     n = vkr_memory_candidates(RHI_MEM_UPLOAD, 0xF, 32 * MB, &p, 0, out);
-    expect("32 MB upload", out, n, (const uint32_t[]){1, 2, 3}, 3);
+    expect("32 MB upload", out, n, (const uint32_t[]){2, 1, 3}, 3);
     /* the window refused once: every upload tries it last */
     n = vkr_memory_candidates(RHI_MEM_UPLOAD, 0xF, 64 * 1024, &p, 1u << 3, out);
-    expect("64 KB upload, window full", out, n, (const uint32_t[]){1, 2, 3}, 3);
+    expect("64 KB upload, window full", out, n, (const uint32_t[]){2, 1, 3}, 3);
     /* the buffer's memoryTypeBits leave the window out: never listed */
     n = vkr_memory_candidates(RHI_MEM_UPLOAD, 0x7, 4 * MB, &p, 0, out);
-    expect("4 MB upload, window not allowed", out, n, (const uint32_t[]){1, 2}, 2);
+    expect("4 MB upload, window not allowed", out, n, (const uint32_t[]){2, 1}, 2);
     /* device memory: VRAM, the window (device-local too), then the rest */
     n = vkr_memory_candidates(RHI_MEM_DEVICE, 0xF, 64 * MB, &p, 0, out);
     expect("device", out, n, (const uint32_t[]){0, 3, 1, 2}, 4);
@@ -108,15 +108,15 @@ static void smallWindow(void)
     }
 }
 
-/* resizable BAR: the window is all of VRAM, so every upload goes there
-   first, whatever its size */
+/* resizable BAR: the window is all of VRAM, every upload's second choice
+   after cached system memory, whatever its size */
 static void resizableBar(void)
 {
     const VkPhysicalDeviceMemoryProperties p = nvidiaNoRebar(8018 * MB);
     uint32_t out[VK_MAX_MEMORY_TYPES], n;
 
     n = vkr_memory_candidates(RHI_MEM_UPLOAD, 0xF, 64 * MB, &p, 0, out);
-    expect("64 MB upload, resizable BAR", out, n, (const uint32_t[]){3, 1, 2}, 3);
+    expect("64 MB upload, resizable BAR", out, n, (const uint32_t[]){2, 3, 1}, 3);
     if (vkr_memory_small_window(&p, 3)) {
         printf("FAIL resizable BAR: not a small window\n");
         s_failures++;
