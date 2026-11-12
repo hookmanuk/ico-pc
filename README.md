@@ -26,6 +26,10 @@ asks for that file. Pick it, and the game copies what it needs from it once
 and starts; it does not ask again. There is nothing to set up before the
 first start.
 
+**The VR mode has only been tested with the European disc** (SCES-50760).
+The other discs play as the flat game does, but nobody has checked them in
+a headset yet.
+
 You play seated, with a gamepad or the keyboard, as in the flat game. Motion
 controllers are not used. **F8** puts the view straight ahead of you again,
 and so does SteamVR's "Reset seated position".
