@@ -3599,7 +3599,9 @@ void rd__replay_vu(Replay *r, const RdFrame *f, const RdCmd *c)
         rd__vr_picture_camera(f, c); /* VR fork: the reflection's eyes */
     }
     vuVelMaybe(r); /* the walk past list 0: the velocity pass first */
+    rd__vr_vu_cmd(c); /* VR fork: the title's logo on the HUD's screen */
     doVuDraw(r, f, c);
+    rd__vr_vu_cmd(NULL);
     s_velArm = NULL;
     r->picture = 0;
     rd__vr_picture_camera(NULL, NULL);

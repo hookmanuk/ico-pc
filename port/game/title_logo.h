@@ -54,6 +54,13 @@ int ico_title_logo_skip(const char *model);
    renderer detecting them. */
 int ico_title_fullframe_model(const char *model);
 
+/* VR fork: seki/src/RegistPacket.c reg_DispObj's mark for the object's
+   draws (port/render/rd_vr.h rd_vr_hud_mark): 1 for the logo's models on
+   the title's stage, 2 for the full-frame plane, 0 for every other model.
+   The models stand just before the game's camera; in VR they are placed
+   by their 2D picture on the HUD's screen, the plane over the whole view. */
+int ico_title_logo_vr_kind(const char *model);
+
 /* The parts, for the test: whether `model` names one of the logo's nine
    models, and one step of the hidden state (*hidden) for the stage, the
    current layout and whether a menu covers the title; returns *hidden. */

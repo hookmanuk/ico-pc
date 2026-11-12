@@ -209,6 +209,8 @@ static bool pictureFlat(void)
     return flat;
 }
 
+static void hudMeshAge(void);
+
 void rd__vr_picture_begin(const RdVrFrame *f)
 {
     if (++s_dbgFrames % 900u == 0u) {
@@ -228,6 +230,7 @@ void rd__vr_picture_begin(const RdVrFrame *f)
         memset(s_dbgGrid, 0, sizeof(s_dbgGrid));
     }
     shadowSwitch();
+    hudMeshAge();
     s_vr.cur = *f;
     s_vr.cur.flat = s_vr.on && pictureFlat() ? 1u : 0u;
     if (s_vr.cur.flat) {
@@ -659,6 +662,95 @@ static void hudMatrices(IcoFrameCB *cb)
         mul4(H, Q, H);
         toFloat(H, cb->vrHud[v]);
     }
+}
+
+/* The title's logo: the meshes the game drew under rd_vr_hud_mark (the
+ * letters I, C, O, their glows and shadows, the darkening plane; models
+ * that stand just before the game's camera), by mesh id.  Each record of a
+ * mesh sets or clears its entry, so an id a later stage reuses heals. */
+#define HUD_MESH_MAX 32
+static struct {
+    uint32_t mesh[HUD_MESH_MAX];
+    uint8_t kind[HUD_MESH_MAX];
+    volatile uint32_t n;
+    volatile int mark;
+    volatile uint32_t marks; /* the marked records so far (hudMeshAge) */
+} s_hudMesh;
+static uint32_t s_vuKind;
+
+void rd_vr_hud_mark(int kind)
+{
+    s_hudMesh.mark = kind;
+}
+
+void rd__vr_mesh_mark(uint32_t mesh)
+{
+    const int mark = s_hudMesh.mark;
+    if (!s_vr.on || (!mark && !s_hudMesh.n)) {
+        return;
+    }
+    vrLock();
+    uint32_t i = 0;
+    while (i < s_hudMesh.n && s_hudMesh.mesh[i] != mesh) {
+        i++;
+    }
+    if (mark) {
+        s_hudMesh.marks++;
+        if (i < HUD_MESH_MAX) {
+            if (i == s_hudMesh.n) {
+                s_hudMesh.n = i + 1u;
+                rd__log("VR: the title's logo: mesh %u on the HUD's screen (kind %d)", mesh, mark);
+            }
+            s_hudMesh.mesh[i] = mesh;
+            s_hudMesh.kind[i] = (uint8_t)mark;
+        }
+    } else if (i < s_hudMesh.n) {
+        s_hudMesh.mesh[i] = s_hudMesh.mesh[s_hudMesh.n - 1u];
+        s_hudMesh.kind[i] = s_hudMesh.kind[s_hudMesh.n - 1u];
+        s_hudMesh.n = s_hudMesh.n - 1u;
+    }
+    vrUnlock();
+}
+
+/* a picture's start: the entries dropped once nothing has been marked for
+   300 pictures (the title left), so the draws' lookups end */
+static void hudMeshAge(void)
+{
+    static uint32_t s_seen, s_idle;
+    if (!s_hudMesh.n) {
+        return;
+    }
+    const uint32_t m = s_hudMesh.marks;
+    s_idle = m == s_seen ? s_idle + 1u : 0u;
+    s_seen = m;
+    if (s_idle >= 300u) {
+        vrLock();
+        s_hudMesh.n = 0;
+        vrUnlock();
+        s_idle = 0;
+    }
+}
+
+void rd__vr_vu_cmd(const void *cmd)
+{
+    const RdCmd *c = cmd;
+    s_vuKind = 0;
+    if (!c || !s_hudMesh.n || c->type != RDC_MESH) {
+        return;
+    }
+    vrLock();
+    for (uint32_t i = 0; i < s_hudMesh.n; i++) {
+        if (s_hudMesh.mesh[i] == c->u[0]) {
+            s_vuKind = s_hudMesh.kind[i] == 2 ? 5u : 4u;
+            break;
+        }
+    }
+    vrUnlock();
+}
+
+uint32_t rd__vr_vu_kind(void)
+{
+    return s_vr.on && s_vr.cur.valid && !s_vr.cur.flat ? s_vuKind : 0u;
 }
 
 uint32_t rd__vr_screen_kind_in(const void *cmd, const void *frame, int list)

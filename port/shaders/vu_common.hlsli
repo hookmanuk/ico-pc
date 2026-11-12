@@ -646,7 +646,28 @@ float vu_divide(inout VuVtx o)
 #ifdef ICO_VR
     // VR fork: the camera's screen to this eye's (port/render/rd_vr.h)
     if (g_vrMode.x != 0.0) {
-        o.h = mul(g_vrScreen[g_viewIndex], o.h);
+        if (g_vr.x >= 4u) {
+            // the title's logo (rd_vr.h rd_vr_hud_mark: models just before
+            // the game's camera): the camera's own picture of the vertex,
+            // as the frame's uv, on the HUD's screen (FrameCB.vrHud), its
+            // GS Z kept; 5: the darkening plane, stretched about the
+            // screen's middle over the view
+            if (o.h.w > 0.0) {
+                float3 cp = o.h.xyz / o.h.w;
+                float hfx = g_frame.y > 0.0 ? g_frame.y : 256.0;
+                float hfy = g_frame.z > 0.0 ? g_frame.z : 224.0;
+                float2 org = float2(2048.0 - hfx, 2048.0 - hfy);
+                float2 ext = float2(2.0 * hfx, 2.0 * hfy);
+                float2 uv = (cp.xy - org) / ext;
+                if (g_vr.x == 5u) {
+                    uv = (uv - 0.5) * 8.0 + 0.5;
+                }
+                float4 e = mul(g_vrHud[g_viewIndex], float4(uv, 0.0, 1.0));
+                o.h = float4(org * e.w + e.xy * ext, cp.z * e.w, e.w);
+            }
+        } else {
+            o.h = mul(g_vrScreen[g_viewIndex], o.h);
+        }
         // the clip flags from the eye's own position (FrameCB.vrClip: the
         // eye's GS screen to a clip space with a guard band about its frame
         // and the camera's near and far): the scissor programs' rejects and

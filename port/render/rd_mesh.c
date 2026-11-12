@@ -36,6 +36,7 @@
 #include "../core/region.h" /* ico_region: which disc's VU programs */
 #include "rd_internal.h"
 #include "rd_mesh.h"
+#include "rd_vr.h"
 #include "rd_vu_rec_early.h"
 #include "shader_consts.h"
 #include "vu1_ref.h"
@@ -2941,6 +2942,7 @@ void rd_draw_vu_mesh(RdMesh mesh, const RdVuDraw *d, RdKey key)
                       d->materials, cards, cardBytes);
     if (c) {
         c->u[0] = mesh.id;
+        rd__vr_mesh_mark(mesh.id); /* VR fork: the title's logo (rd_vr.h) */
         /* b[4]: RD_VU_VIEW_*, how the model matrices follow the camera
          * (rd_interp.c's re-base); 0 in older dumps */
         c->b[4] = d->bones ? 0 : d->view;

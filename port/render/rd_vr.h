@@ -115,6 +115,16 @@ void rd__vr_shutdown(void);
  * the whole frame, or text), drawn on the screen before the seat
  * (FrameCB.vrHud); frame the RdFrame (its payload), list the draw's */
 uint32_t rd__vr_screen_kind(const void *cmd); /* a const RdCmd * */
+/* The title's logo: 3D models that stand just before the game's camera
+ * (the letters, their glows and shadows, the darkening plane).  A mesh the
+ * game draws while the mark is set (ico2/seki/src/RegistPacket.c
+ * reg_DispObj; the game thread) is placed in VR by its 2D picture on the
+ * HUD's screen (vu_common.hlsli vu_divide, DrawCB.vr.x 4), kind 2 stretched
+ * over the view about the screen's middle (5); 0: no mark. */
+void rd_vr_hud_mark(int kind);
+void rd__vr_mesh_mark(uint32_t mesh); /* rd_mesh.c: a mesh draw recorded */
+void rd__vr_vu_cmd(const void *cmd);  /* rd_replay_vu.c: the VU command drawn, NULL after */
+uint32_t rd__vr_vu_kind(void);        /* rd_replay.c: its DrawCB.vr.x, 0 for none */
 uint32_t rd__vr_screen_kind_in(const void *cmd, const void *frame, int list);
 /* the picture draws its 2D on the HUD (VR on, the eyes' picture, not flat) */
 bool rd__vr_hud_on(void);

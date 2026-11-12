@@ -3230,7 +3230,8 @@ static void fillDrawCB(const Replay *r, const RdDrawPass *dp, const DrawSetup *d
                 k = 0u;
             }
         }
-        cb->vr[0] = k;
+        /* a mesh of the title's logo (rd_vr.h rd_vr_hud_mark): 4 or 5 */
+        cb->vr[0] = k ? k : rd__vr_vu_kind();
         if (k == 1u) {
             rd__vr_st_shift(s_vrScreenCmd, &cb->vr[1]);
         }

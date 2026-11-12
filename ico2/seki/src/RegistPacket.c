@@ -2713,6 +2713,12 @@ extern int ico_title_logo_skip(const char *model);
    title's frame dumps), so its colour does not vary across it and the
    stretch only draws more of it. */
 extern int ico_title_fullframe_model(const char *model);
+#ifdef ICO_RD
+/* VR fork: the title's logo and its darkening plane, models just before the
+   camera, are marked for the renderer (port/render/rd_vr.h) */
+extern int ico_title_logo_vr_kind(const char *model);
+extern void rd_vr_hud_mark(int kind);
+#endif
 
 /* An object reaches here only while it is
    active and its scripts show it (scpDispOff*, model->disp): authored, the
@@ -2737,6 +2743,7 @@ void reg_DispObj(Sub15C *o)
         return;
     }
 #ifdef ICO_RD
+    rd_vr_hud_mark(ico_title_logo_vr_kind(o->model->name)); /* VR fork */
     if (gsFrame.w != ICO_FRAME_BASE_W && o->nodeNum <= 32 &&
         ico_title_fullframe_model(o->model->name)) {
         widen = 1;
@@ -2773,6 +2780,7 @@ void reg_DispObj(Sub15C *o)
         }
     }
 #ifdef ICO_RD
+    rd_vr_hud_mark(0); /* VR fork */
     if (widen) {
         for (n = 0; n < o->nodeNum; n++) {
             row = (float *)((char *)o->nodeMtx + n * 64);

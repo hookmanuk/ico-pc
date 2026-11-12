@@ -38,6 +38,14 @@ int ico_title_logo_model(const char *model)
     return 0;
 }
 
+int ico_title_logo_vr_kind(const char *model)
+{
+    if (ico_title_fullframe_model(model)) {
+        return 2;
+    }
+    return stage_no == TITLE_STAGE && ico_title_logo_model(model) ? 1 : 0;
+}
+
 int ico_title_logo_step(int *hidden, int stage, int layout, int covered)
 {
     if (stage != TITLE_STAGE) {
