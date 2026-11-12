@@ -105,11 +105,16 @@ void actTitleShortCut(GObj *volatile self);
    the parent's `t`, now passed by pointer, and is inlined at both of
    its calls.  The tail after each demo (the thread priority and the fade out)
    is written out in case 0 and again in case 1. */
+/* VR fork: port/game/video_options.c: the headset is on.  The title's menu
+   then never times out into the opening demo (a headset's wearer left on
+   the menu is not thrown into it) */
+extern int ico_video_vr(void);
+
 static inline int tick(int *pt) /* derived name */
 {
     if ((current_layout_id == PAL_JPNKORNTSCAUG6JUN26CN(12, 9) ||
          current_layout_id == PAL_JPNKORNTSCAUG6JUN26CN(13, 10)) &&
-        (ICO_JUN26 || lt_continue_selected == 0)) {
+        (ICO_JUN26 || lt_continue_selected == 0) && !ico_video_vr()) {
         (*pt)--;
     } else {
         *pt = (60 - systemStatus[0] * 10) / systemStatus[1] * 10;
